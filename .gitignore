@@ -1,0 +1,88 @@
+# Credentials - NEVER commit
+.credentials.json
+
+# Machine-local settings override - do not sync across machines
+settings.local.json
+
+# Security hook logs / per-session state (may contain command args)
+/security/
+
+# Backups
+*.bak
+*.bak.*
+
+# Runtime state / per-session data
+/.last-cleanup
+/.last-update-result.json
+/agent-memory/
+/backups/
+/cache/
+/chrome/
+/.claude/
+/debug/
+/downloads/
+/file-history/
+/history.jsonl
+/image-cache/
+/mcp-needs-auth-cache.json
+/paste-cache/
+/plans/
+/projects/
+/prompts/
+/session-env/
+/sessions/
+/shell-snapshots/
+/stats-cache.json
+/statsig/
+/tasks/
+/telemetry/
+/todos/
+
+# Plugin runtime - keep only declarative manifests
+/plugins/cache/
+/plugins/data/
+/plugins/blocklist.json
+/plugins/installed_plugins.json
+/plugins/known_marketplaces.json
+/plugins/install-counts-cache.json
+/plugins/plugin-catalog-cache.json
+/plugins/marketplaces/
+/plugins/.last_inuse_sweep
+
+# Teams/session runtime
+/teams/
+
+# Agents + store-backed skills may live outside this repo, so external skill stores
+# are ignored by default.
+# Only the own in-place authored skills are tracked (they exist nowhere else) so they still
+# sync across machines.
+/skills/*
+!/skills/_shared/
+!/skills/clerk-cli/
+!/skills/github-cli/
+!/skills/neon-cli/
+!/skills/posthog-cli/
+!/skills/resend-cli/
+!/skills/vercel-cli/
+!/skills/review-story/
+!/skills/security-review/
+!/skills/write-prd/
+!/skills/ultron/
+# Dereferenced from the store to vendor them in-place (they also exist in the ~/.agents store):
+!/skills/implement-story/
+!/skills/meta-code/
+!/skills/meta-debug/
+# Custom subagent definitions are authored in-place (not symlinked); track them,
+# drop the runtime .claude/agent-memory state.
+/agents/*
+!/agents/agent-docs.md
+!/agents/agent-explore.md
+!/agents/agent-websearch.md
+
+# OS / editor noise
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+__pycache__/
+*.pyc

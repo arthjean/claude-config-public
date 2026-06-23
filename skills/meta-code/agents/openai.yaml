@@ -1,0 +1,18 @@
+interface:
+  display_name: "meta-code"
+  short_description: "Adaptive research pipeline: web + codebase + docs into one cited, confidence-rated answer"
+  default_prompt: "Research and answer this development question end to end, grounding it in current sources and the local code: "
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "exa"
+      description: "Web search and fetch via Exa (configured in ~/.codex/config.toml)"
+      transport: "streamable_http"
+      url: "https://mcp.exa.ai/mcp"
+  skills:
+    - value: "openai-docs"
+      description: "Official OpenAI / Codex / model-API docs lookup and model migration"
