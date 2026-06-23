@@ -43,7 +43,7 @@ Ensuite, inspectez `settings.json`. Les permissions sont volontairement puissant
 Collez ce paragraphe dans Claude Code après avoir cloné le fork:
 
 ```text
-Tu vas connecter ce fork de configuration Claude Code à mon environnement local. Inspecte le repo, identifie les fichiers utiles pour `~/.claude`, préserve strictement mes fichiers privés existants comme `settings.local.json`, `.credentials.json`, `.env`, sessions, caches et historiques, adapte `CLAUDE.md` à mon profil réel en remplaçant les defaults génériques par mes préférences explicites, vérifie que `settings.json`, `rules/`, `agents/`, `skills/` et `statusline.sh` sont cohérents avec ma machine, puis lance un scan de sécurité sur les chemins locaux, noms personnels, secrets et états runtime avant de me proposer le diff final.
+Installe ce fork comme base de mon `~/.claude` en mode autonome et maximaliste. Comprends l'esprit de la config, garde l'agent proactif, permissif, outillé et orienté action, active ce qui augmente sa puissance (agents, skills, rules, statusline, settings) sans me demander de micro-validations, adapte seulement ce qui dépend de ma machine, de mon stack et de mon style, protège mes secrets et fichiers privés existants, puis applique l'intégration la plus directe possible et résume ce que tu as changé.
 ```
 
 ## Checklist avant publication
