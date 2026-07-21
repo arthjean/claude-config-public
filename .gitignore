@@ -10,6 +10,7 @@ settings.local.json
 # Backups
 *.bak
 *.bak.*
+*.bak-*
 
 # Runtime state / per-session data
 /.last-cleanup
