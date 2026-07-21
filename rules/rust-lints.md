@@ -1,5 +1,5 @@
 ---
-description: Lints Clippy pour les projets Rust: politique panic/unwrap, clippy.toml et cfg_attr. Source de vérité référencée depuis ~/.claude/CLAUDE.md; validation proportionnelle, sans hook automatique.
+description: Clippy lints for Rust projects: panic/unwrap policy, clippy.toml and cfg_attr. Source of truth referenced from ~/.claude/CLAUDE.md; proportional validation, no automatic hook.
 paths:
   - "**/*.rs"
   - "**/Cargo.toml"
