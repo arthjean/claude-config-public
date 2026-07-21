@@ -113,9 +113,25 @@ bunx <cli>
 
 Do not use npm, pnpm, or yarn unless the target project explicitly requires them.
 
-### Git Attribution
+### Git and GitHub Hygiene
 
-Do not add AI attribution, coauthor trailers, generated-by footers, or assistant signatures to commits, pull requests, release notes, tags, or merge messages unless the user explicitly asks for them.
+Attribution:
+
+- Do not add AI attribution, coauthor trailers, generated-by footers, or assistant signatures to commits, pull requests, release notes, tags, or merge messages unless the user explicitly asks for them.
+
+Issue safety:
+
+- Never close a GitHub issue without explicit approval.
+- Never use `Fixes #...`, `Closes #...`, or `Resolves #...` unless the user explicitly asks to close the issue. Default to a non-closing reference like `Refs #...`.
+
+Commit quality:
+
+- Atomic commits: one coherent intention per commit.
+- Conventional Commits: `type(scope): concise imperative summary`.
+- No unrelated churn. Separate behavior, config, refactor, and documentation when intentions differ.
+- Before committing, inspect the staged diff and verify the message describes exactly what is staged.
+
+When the user asks for a `git pull`, inspect the branch and worktree first (`git status --short --branch`, `git rev-parse --short HEAD`), pull only when tracked local work is safe, then summarize the change range. Never discard local work.
 
 ## Agent Delegation Rules
 
@@ -129,6 +145,14 @@ Use the custom agents in `agents/` when the environment supports them:
 
 Prefer parallel delegation when research streams are independent. Keep delegated tasks narrow, concrete, and evidence-based. Do not use documentation agents for business logic debugging, and do not use web research when local code or official docs are the right source.
 
+Routing rules:
+
+- Keep quick lookups and up to three targeted local reads in the main conversation. Delegate only when the question is broad, cross-module, or needs sustained evidence gathering.
+- Each subagent starts with a fresh context, so delegation has a real token and latency cost. Every delegated brief must be self-contained and focused.
+- Run at most four agents concurrently, and only in parallel when their tasks are independent.
+- Keep delegation at depth one: research agents do not spawn children.
+- The three research agents are read-only. Keep implementation in the main conversation and do not broaden their tool allowlists.
+
 ## Anti-Friction Rules
 
 - Read the relevant file before editing it.
@@ -137,6 +161,13 @@ Prefer parallel delegation when research streams are independent. Keep delegated
 - Prefer action over endless exploration. Read 3 to 5 relevant files, act, then iterate.
 - Before delivering, check that the diff answers the latest user request.
 - Never revert user changes unless the user explicitly requests it.
+
+Proportional validation:
+
+- Do not run test suites, builds, linters, typechecks, or broad validation after each edit. Use only the narrowest check required to diagnose a concrete failure or unblock the next step.
+- Batch validation at the commit boundary: one proportionate pass after implementation, targeted checks first, broad suites only when risk justifies them.
+- If no commit is requested, skip broad validation and report what remains unverified.
+- Do not repeat a passing validation unless relevant code changed afterward.
 
 ## Public Fork Hygiene
 
