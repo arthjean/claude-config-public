@@ -32,7 +32,7 @@ Before any command in this skill works, verify:
 1. **`bunx`** - comes with bun. The user's global rule mandates bun, never npm/npx. The skill itself doesn't require bun (it shells out to `gh` and `curl`), but the broader workflow does.
 2. **`gh`** - official GitHub CLI. Install it with your OS package manager. Used directly for some commands (`gh secret set` because libsodium encryption is a pain in pure bash) and indirectly as a token source via `gh auth token`.
 3. **`curl`** - install it with your OS package manager if it is not already available. Used for direct REST/GraphQL calls.
-4. **`jq`** - for JSON parsing. `sudo dnf install jq` if missing.
+4. **`jq`** - for JSON parsing. Install it with your OS package manager if missing.
 5. **`git`** - used by `resolve_repo()` to detect the active `<owner>/<repo>` from the current directory's `origin` remote.
 6. **`GITHUB_TOKEN`** - auto-loaded from the project's `.env.local` (then `.env`) walking up from cwd to the git repo root, or pulled from the shell environment if exported, or borrowed from the `gh` keyring as a last resort. Generate at https://github.com/settings/tokens (classic) or .../tokens?type=beta (fine-grained). Recommended scopes for full coverage:
    - **classic**: `repo, workflow, admin:org, gist, project, user, notifications, delete_repo, admin:public_key`

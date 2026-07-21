@@ -60,10 +60,9 @@ case "$action" in
     [[ $# -ge 3 ]] || err "usage: $0 metadata <org_id> {public|private} <merge-json>"
     oid="$1"; kind="$2"; patch="$3"
     case "$kind" in public|private) ;; *) err "kind must be: public | private" ;; esac
-    current=$(clerk_api GET "/organizations/$oid" | jq ".${kind}_metadata // {}")
-    merged=$(echo "$current" | jq --argjson p "$patch" '. + $p')
-    body=$(jq -nc --argjson m "$merged" --arg k "${kind}_metadata" '{($k): $m}')
-    clerk_api PATCH "/organizations/$oid" "$body" | jq .
+    # API version 2026-05-12 provides an atomic deep-merge endpoint.
+    body=$(jq -nc --argjson m "$patch" --arg k "${kind}_metadata" '{($k): $m}')
+    clerk_api PATCH "/organizations/$oid/metadata" "$body" | jq .
     ;;
 
   members)

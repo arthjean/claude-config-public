@@ -1,321 +1,224 @@
-# vercel CLI - Full Command Reference
+# Vercel CLI command map
 
-All commands assume `VERCEL_TOKEN` is exported. Replace `$PID` with your project ID. The CLI doesn't expose a universal `--output json` flag; use `vercel api` (beta) or the REST API helpers in `scripts/` when you need JSON.
+This map was checked against Vercel CLI 56.2.0. Treat it as a routing reference, then inspect `bunx vercel@latest <command> --help` before using an unfamiliar or destructive flag.
 
-## Auth & global flags
+Assume `VERCEL_TOKEN` is exported. Keep it in the environment instead of passing `--token`, which can expose it through process arguments or logs.
 
-```bash
-# Auth - always with the token flag in agent contexts
-bunx vercel@latest whoami --token "$VERCEL_TOKEN"
+## Global options
 
-# Logout (rare in agent contexts)
-bunx vercel@latest logout
-```
+| Option | Purpose |
+|---|---|
+| `--cwd <dir>` | Set the working directory for one command |
+| `--scope <team>` or `-S` | Select a team scope |
+| `--token <token>` or `-t` | Override environment authentication; avoid in Codex unless unavoidable |
+| `--non-interactive` | Disable interactive prompts; Codex is normally detected automatically |
+| `--no-color` | Remove ANSI formatting |
+| `--debug` | Enable verbose diagnostics; scrub output before reporting it |
+| `--yes` or `-y` | Accept prompts; use only after confirming the exact mutation target |
 
-| Flag | Short | Purpose |
-|---|---|---|
-| `--token <tok>` | `-t` | Auth token; overrides `VERCEL_TOKEN` |
-| `--scope <slug\|id>` | `-S` | Team scope; overrides active scope and `VERCEL_ORG_ID` |
-| `--team <slug\|id>` | `-T` | Alias for `--scope` |
-| `--project <name\|id>` | - | Overrides `VERCEL_PROJECT_ID` |
-| `--cwd <path>` | - | Working directory |
-| `--debug` | `-d` | Verbose output |
-| `--no-color` | - | Strip ANSI codes |
-| `--local-config <path>` | `-A` | Path to `vercel.json` |
-| `--global-config <path>` | `-Q` | Global config directory |
-| `--yes` | `-y` | Skip interactive confirmations (safe to always set in agents) |
+Do not run `login` or `open` without explicit browser permission.
 
-## projects (alias: `project`)
+## Authentication and scope
 
 ```bash
-bunx vercel@latest project ls --token "$VERCEL_TOKEN"
-bunx vercel@latest project add <name> --token "$VERCEL_TOKEN"
-bunx vercel@latest project rm <name> --token "$VERCEL_TOKEN" --yes
-bunx vercel@latest project inspect <name> --token "$VERCEL_TOKEN"
-
-# Link the current directory to a project (writes .vercel/project.json)
-bunx vercel@latest link --token "$VERCEL_TOKEN" --yes
-bunx vercel@latest link --project my-app --token "$VERCEL_TOKEN" --yes
+bunx vercel@latest whoami
+bunx vercel@latest teams list
+bunx vercel@latest teams members --scope <team>
 ```
 
-## deploy
+Prefer `--scope` for one-off commands. Use `switch` only when the user wants to change persisted CLI scope.
+
+## Project context
 
 ```bash
-# Preview deploy (default)
-bunx vercel@latest deploy --token "$VERCEL_TOKEN" --yes
-
-# Production deploy
-bunx vercel@latest deploy --prod --token "$VERCEL_TOKEN" --yes
-
-# Custom environment / target
-bunx vercel@latest deploy --target=staging --token "$VERCEL_TOKEN" --yes
-
-# Pre-build only (no deploy)
-bunx vercel@latest build --prod --token "$VERCEL_TOKEN"
+bunx vercel@latest projects list --scope <team>
+bunx vercel@latest projects inspect <name-or-id> --scope <team>
+bunx vercel@latest projects add <name> --scope <team>
+bunx vercel@latest projects remove <name> --scope <team>
 ```
 
-The CLI prints the deployment URL on stdout. Use `scripts/vercel-deploy.sh` to get structured `{url, id, state, target}` JSON.
-
-## list / inspect / promote / rollback / redeploy / remove
+Link the current repository only when persistent local context is useful:
 
 ```bash
-# List recent deployments for the current project
-bunx vercel@latest ls --token "$VERCEL_TOKEN"
-
-# Filter by environment
-bunx vercel@latest ls --prod --token "$VERCEL_TOKEN"
-
-# Deep details about a deployment (URL, build settings, env, regions)
-bunx vercel@latest inspect <url-or-id> --token "$VERCEL_TOKEN"
-
-# Inspect with build logs
-bunx vercel@latest inspect <url-or-id> --logs --token "$VERCEL_TOKEN"
-
-# Wait for an in-progress deployment to finish
-bunx vercel@latest inspect <url-or-id> --wait --token "$VERCEL_TOKEN"
-
-# Promote a preview to production
-bunx vercel@latest promote <url-or-id> --token "$VERCEL_TOKEN"
-
-# Check promotion status
-bunx vercel@latest promote status <project> --token "$VERCEL_TOKEN"
-
-# Rollback production to a prior deployment
-bunx vercel@latest rollback <url-or-id> --token "$VERCEL_TOKEN"
-bunx vercel@latest rollback status <project> --token "$VERCEL_TOKEN"
-
-# Re-run a deployment with the same source
-bunx vercel@latest redeploy <url-or-id> --token "$VERCEL_TOKEN"
-
-# Remove a single deployment OR every deployment of a project
-bunx vercel@latest rm <url-or-id> --token "$VERCEL_TOKEN" --yes
-bunx vercel@latest rm <project-name> --token "$VERCEL_TOKEN" --yes  # ALL deployments
+bunx vercel@latest link --project <name-or-id> --scope <team> --yes
 ```
 
-## env
+This writes `.vercel/project.json`. Keep the current working directory in the repository.
+
+## Deployments
 
 ```bash
-# List
-bunx vercel@latest env ls --token "$VERCEL_TOKEN"
-bunx vercel@latest env ls production --token "$VERCEL_TOKEN"
+# Inspect inputs without deploying
+bunx vercel@latest deploy --dry --format=json
 
-# Add (interactive - better to use scripts/vercel-env.sh in agents)
-bunx vercel@latest env add NAME production --token "$VERCEL_TOKEN"
+# Preview deployment
+bunx vercel@latest deploy --yes --format=json
 
-# Update
-bunx vercel@latest env update NAME production --token "$VERCEL_TOKEN"
+# Production deployment
+bunx vercel@latest deploy --prod --yes --format=json
 
-# Remove
-bunx vercel@latest env rm NAME production --token "$VERCEL_TOKEN" --yes
+# Custom environment
+bunx vercel@latest deploy --target <environment> --yes --format=json
 
-# Pull to .env.local
-bunx vercel@latest env pull --environment=production --token "$VERCEL_TOKEN"
-
-# Run a command with env vars injected
-bunx vercel@latest env run --token "$VERCEL_TOKEN" -- bun run dev
+# List and inspect
+bunx vercel@latest list [project]
+bunx vercel@latest list [project] --prod
+bunx vercel@latest inspect <url-or-id> --format=json
+bunx vercel@latest inspect <url-or-id> --logs
+bunx vercel@latest inspect <url-or-id> --wait --timeout 90s
 ```
 
-## domains / dns / certs
+Production routing operations:
 
 ```bash
-# Domains
-bunx vercel@latest domains ls --token "$VERCEL_TOKEN"
-bunx vercel@latest domains add example.com <project> --token "$VERCEL_TOKEN"
-bunx vercel@latest domains rm example.com --token "$VERCEL_TOKEN" --yes
-bunx vercel@latest domains buy example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest domains transfer-in example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest domains move example.com <other-team> --token "$VERCEL_TOKEN"
-bunx vercel@latest domains inspect example.com --token "$VERCEL_TOKEN"
-
-# DNS records
-bunx vercel@latest dns ls example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest dns add example.com www CNAME cname.vercel-dns.com --token "$VERCEL_TOKEN"
-bunx vercel@latest dns rm <record-id> --token "$VERCEL_TOKEN"
-
-# Certificates
-bunx vercel@latest certs ls --token "$VERCEL_TOKEN"
-bunx vercel@latest certs issue example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest certs rm <cert-id> --token "$VERCEL_TOKEN"
+bunx vercel@latest promote <url-or-id>
+bunx vercel@latest promote status [project]
+bunx vercel@latest rollback <url-or-id>
+bunx vercel@latest rollback status [project]
+bunx vercel@latest redeploy <url-or-id> [--target <environment>]
 ```
 
-## aliases
+Removal has two distinct blast radii:
 
 ```bash
-bunx vercel@latest alias ls --token "$VERCEL_TOKEN"
-bunx vercel@latest alias set <deployment-url> custom.example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest alias rm custom.example.com --token "$VERCEL_TOKEN" --yes
+# Remove one deployment
+bunx vercel@latest remove <deployment-id> --safe --yes
+
+# Remove every deployment for a project
+bunx vercel@latest remove <project-name> --yes
+
+# Delete the project itself
+bunx vercel@latest projects remove <project-name>
 ```
 
-## logs
+Prefer a `dpl_...` deployment ID for single-deployment removal.
+
+## Logs and observability
+
+Use `inspect --logs` for build output and `logs` for request or runtime logs:
 
 ```bash
-# Runtime logs (one-shot)
-bunx vercel@latest logs <deployment-url> --token "$VERCEL_TOKEN"
-
-# Live tail
-bunx vercel@latest logs <deployment-url> --follow --token "$VERCEL_TOKEN"
+bunx vercel@latest inspect <url-or-id> --logs
+bunx vercel@latest logs <url-or-id> --json
+bunx vercel@latest logs <url-or-id> --follow
+bunx vercel@latest logs --project <name-or-id> --level error --since 1h --json
+bunx vercel@latest logs --query 'status:500 error' --json
 ```
 
-For build logs use `vercel inspect --logs <url>` or `scripts/vercel-logs.sh build <url>`.
+Current log filters include deployment, project, environment, branch, source, level, status code, request ID, time range, free-form query, and result limit.
 
-## teams
+Additional observability families:
+
+```text
+activity, agent-runs, alerts, metrics, traces, usage
+```
+
+Inspect their help before use because filters evolve quickly.
+
+## Environment variables
 
 ```bash
-bunx vercel@latest teams list --token "$VERCEL_TOKEN"
-bunx vercel@latest teams add --token "$VERCEL_TOKEN"          # interactive
-bunx vercel@latest teams invite user@example.com --token "$VERCEL_TOKEN"
-bunx vercel@latest switch <team-slug> --token "$VERCEL_TOKEN" # switch active scope
+bunx vercel@latest env list [environment] [git-branch]
+bunx vercel@latest env add <name> [environment] [git-branch]
+bunx vercel@latest env update <name> [environment]
+bunx vercel@latest env remove <name> [environment]
+bunx vercel@latest env pull [filename] --environment=<environment>
+bunx vercel@latest env run -- <command>
 ```
 
-## git & integrations
+Native add and update flows may request values interactively. Use `vercel-env.sh` for non-interactive typed or multi-target writes. Never echo a value or pass a secret in a command that will be logged.
+
+## Domains, DNS, certificates, and aliases
 
 ```bash
-# Git connect / disconnect
-bunx vercel@latest git ls --token "$VERCEL_TOKEN"
-bunx vercel@latest git connect --token "$VERCEL_TOKEN"
-bunx vercel@latest git disconnect github --token "$VERCEL_TOKEN"
+bunx vercel@latest domains list
+bunx vercel@latest domains inspect <domain>
+bunx vercel@latest domains check <domain>
+bunx vercel@latest domains price <domain>
+bunx vercel@latest domains verify <domain>
+bunx vercel@latest domains add <domain> [project]
+bunx vercel@latest domains buy <domain>
+bunx vercel@latest domains move <domain> <destination-team>
+bunx vercel@latest domains transfer-in <domain>
+bunx vercel@latest domains remove <domain>
 
-# Marketplace integrations
-bunx vercel@latest integration list --token "$VERCEL_TOKEN"
-bunx vercel@latest integration add <name> --token "$VERCEL_TOKEN"
-bunx vercel@latest integration remove <name> --token "$VERCEL_TOKEN"
-bunx vercel@latest integration discover --token "$VERCEL_TOKEN"
-bunx vercel@latest integration guide <name> --token "$VERCEL_TOKEN"
-bunx vercel@latest integration balance <name> --token "$VERCEL_TOKEN"
-bunx vercel@latest integration open <name> [resource] --token "$VERCEL_TOKEN"
+bunx vercel@latest dns --help
+bunx vercel@latest certs --help
 
-# Integration resources (provisioned instances)
-bunx vercel@latest integration-resource remove <resource> --token "$VERCEL_TOKEN"
-bunx vercel@latest integration-resource disconnect <resource> [project] --token "$VERCEL_TOKEN"
+bunx vercel@latest alias list
+bunx vercel@latest alias set <deployment-id-or-url> <alias>
+bunx vercel@latest alias remove <alias>
 ```
 
-## blob (Vercel Blob storage)
+Treat domain purchase, transfer, move, removal, DNS mutation, certificate mutation, and alias removal as externally visible changes.
+
+## Edge Config
+
+The native CLI currently covers store metadata, item patches, tokens, and backups:
 
 ```bash
-bunx vercel@latest blob list --token "$VERCEL_TOKEN"
-bunx vercel@latest blob put <file> --token "$VERCEL_TOKEN"
-bunx vercel@latest blob get <url-or-pathname> --token "$VERCEL_TOKEN"
-bunx vercel@latest blob copy <from-url> <to-pathname> --token "$VERCEL_TOKEN"
-bunx vercel@latest blob del <url-or-pathname> --token "$VERCEL_TOKEN"
+bunx vercel@latest edge-config list
+bunx vercel@latest edge-config get <id-or-slug>
+bunx vercel@latest edge-config add <slug>
+bunx vercel@latest edge-config items <id-or-slug>
+bunx vercel@latest edge-config update <id-or-slug> --patch '<json>'
+bunx vercel@latest edge-config tokens <id-or-slug>
+bunx vercel@latest edge-config backups <id-or-slug>
+bunx vercel@latest edge-config remove <id-or-slug>
 ```
 
-KV and Postgres are managed via `integration` commands or REST - no dedicated CLI subcommand.
+Use `vercel-edge-config.sh` when patch operations already exist in a JSON file or deterministic REST output matters.
 
-## cache
+## Webhooks
 
 ```bash
-# Purge CDN or data cache
-bunx vercel@latest cache purge --type cdn --token "$VERCEL_TOKEN"
-bunx vercel@latest cache purge --type data --token "$VERCEL_TOKEN"
-
-# Tag-based invalidation
-bunx vercel@latest cache invalidate --tag user-profile --token "$VERCEL_TOKEN"
-
-# Hard delete (irreversible)
-bunx vercel@latest cache dangerously-delete --tag stale-tag --token "$VERCEL_TOKEN" --yes
+bunx vercel@latest webhooks list
+bunx vercel@latest webhooks get <id>
+bunx vercel@latest webhooks create <url> --help
+bunx vercel@latest webhooks remove <id>
 ```
 
-## redirects & routes
+The command family is beta. Inspect `create --help` for the current event and project filters. Use `vercel-webhooks.sh` for explicit project ID lists.
+
+## Authenticated REST requests
+
+Use the native beta API client when its OpenAPI catalog contains the endpoint:
 
 ```bash
-bunx vercel@latest redirects list --token "$VERCEL_TOKEN"
-bunx vercel@latest redirects add /old /new --status 301 --token "$VERCEL_TOKEN"
-bunx vercel@latest redirects upload redirects.csv --overwrite --token "$VERCEL_TOKEN"
-bunx vercel@latest redirects promote <version-id> --token "$VERCEL_TOKEN"
-
-bunx vercel@latest routes list --token "$VERCEL_TOKEN"
-bunx vercel@latest routes add --ai "Description of the route" --token "$VERCEL_TOKEN"
-bunx vercel@latest routes edit "name" --dest "https://..." --token "$VERCEL_TOKEN"
-bunx vercel@latest routes publish --token "$VERCEL_TOKEN"
+bunx vercel@latest api list
+bunx vercel@latest api /v2/user
+bunx vercel@latest api /v9/projects --scope <team> --paginate
+bunx vercel@latest api /v10/projects --method POST --field name=my-project
+bunx vercel@latest api /v10/projects --method POST --input config.json
+bunx vercel@latest api /v13/deployments/dpl_xxx --method DELETE
+bunx vercel@latest api /v10/projects --method POST --input config.json --generate=curl
 ```
 
-## webhooks (beta)
+DELETE requests may require confirmation. Do not use `--dangerously-skip-permissions` unless the user explicitly authorized the exact target.
+
+Use `vercel-api.sh` when raw JSON input or an endpoint outside the native catalog is required.
+
+## Other current command families
+
+The top-level CLI also exposes these families:
+
+```text
+ai-gateway, alerts, blob, build, buy, cache, connect, contract, cron,
+curl, deploy-hooks, firewall, flags, git, httpstat, integration,
+integration-resource, metrics, microfrontends, oauth-apps, redirects,
+rolling-release, routes, sandbox, target, telemetry, tokens, traces,
+usage, vcr
+```
+
+Load only the relevant help page. Do not expand this skill's context with unrelated command families.
+
+## Documentation lookup
+
+For current command syntax, prefer local CLI help. For semantic or product documentation, use Context7 against official Vercel docs:
 
 ```bash
-bunx vercel@latest webhooks list --token "$VERCEL_TOKEN"
-bunx vercel@latest webhooks get <id> --token "$VERCEL_TOKEN"
-bunx vercel@latest webhooks create https://hooks.example.com --event deployment.succeeded --token "$VERCEL_TOKEN"
-bunx vercel@latest webhooks rm <id> --token "$VERCEL_TOKEN" --yes
+bunx ctx7@latest library vercel "<full question>"
+bunx ctx7@latest docs /websites/vercel "<specific Vercel question>"
 ```
 
-For CRUD with explicit project filtering use `scripts/vercel-webhooks.sh`.
-
-## flags (Feature Flags)
-
-```bash
-bunx vercel@latest flags list --token "$VERCEL_TOKEN"
-bunx vercel@latest flags create my-feature --token "$VERCEL_TOKEN"
-bunx vercel@latest flags set my-feature --environment production --variant on --token "$VERCEL_TOKEN"
-bunx vercel@latest flags open my-feature --token "$VERCEL_TOKEN"
-```
-
-## target (Custom Environments)
-
-```bash
-bunx vercel@latest target list --token "$VERCEL_TOKEN"
-bunx vercel@latest deploy --target=staging --token "$VERCEL_TOKEN"
-```
-
-## rolling-release
-
-```bash
-bunx vercel@latest rolling-release configure --cfg='[config]' --token "$VERCEL_TOKEN"
-bunx vercel@latest rolling-release start --dpl=<id> --token "$VERCEL_TOKEN"
-bunx vercel@latest rolling-release approve --dpl=<id> --token "$VERCEL_TOKEN"
-bunx vercel@latest rolling-release complete --dpl=<id> --token "$VERCEL_TOKEN"
-```
-
-## observability
-
-```bash
-bunx vercel@latest metrics vercel.request.count --token "$VERCEL_TOKEN"
-bunx vercel@latest metrics schema --token "$VERCEL_TOKEN"
-bunx vercel@latest activity ls --since 30d --type deployment --token "$VERCEL_TOKEN"
-bunx vercel@latest alerts --all --project my-app --token "$VERCEL_TOKEN"
-bunx vercel@latest usage --from 2026-01-01 --to 2026-01-31 --breakdown daily --token "$VERCEL_TOKEN"
-```
-
-## misc
-
-```bash
-# Raw authenticated REST call (beta - equivalent to scripts/vercel-api.sh)
-bunx vercel@latest api /v9/projects --token "$VERCEL_TOKEN"
-bunx vercel@latest api /v1/webhooks -X POST -F url=https://... -F events=deployment.succeeded --token "$VERCEL_TOKEN"
-
-# Bisect a regression across deployments
-bunx vercel@latest bisect --good <good-url> --bad <bad-url> --token "$VERCEL_TOKEN"
-
-# Curl a deployment URL with auto-injected bypass cookie
-bunx vercel@latest curl /api/private --deployment <url> --token "$VERCEL_TOKEN"
-
-# HTTP timing breakdown
-bunx vercel@latest httpstat /api/health --token "$VERCEL_TOKEN"
-
-# Buy credits / addons / pro
-bunx vercel@latest buy credits v0 100 --token "$VERCEL_TOKEN"
-bunx vercel@latest buy addon siem 1 --token "$VERCEL_TOKEN"
-
-# Inspect plan/contract
-bunx vercel@latest contract --format json --token "$VERCEL_TOKEN"
-
-# Open the project dashboard in a browser
-bunx vercel@latest open --token "$VERCEL_TOKEN"
-
-# Telemetry / guidance toggles (CLI behavior, not project state)
-bunx vercel@latest telemetry status
-bunx vercel@latest telemetry disable
-bunx vercel@latest guidance status
-```
-
-## Auth precedence
-
-1. `--token <tok>` flag on the command
-2. `VERCEL_TOKEN` env var
-3. `~/.local/share/com.vercel.cli/auth.json` (from interactive `vercel login`)
-
-For agent use: always env var or flag. **Don't run `vercel login` in a Claude session** - it opens a browser.
-
-## Deprecations
-
-- `vercel secrets` - fully deprecated. Use `vercel env` (encrypted type) instead.
-- `vercel switch` (no args) - interactive only. Use `--scope` flag explicitly.
+If Context7 returns a different best-match library ID, use that result instead of hard-coding `/websites/vercel`.

@@ -1,75 +1,46 @@
-# Vercel REST API - Direct curl
+# Vercel REST API
 
-For parity gaps that have no `vercel` CLI equivalent (or when you need a single endpoint without spinning up node/bun), call the API directly.
+Use this reference only when the native CLI does not cover the operation or when deterministic raw JSON is required. Prefer `bunx vercel@latest api` for endpoints in its current OpenAPI catalog, then use the bundled helper for remaining gaps.
 
 **Base URL:** `https://api.vercel.com`
 **Auth:** `Authorization: Bearer $VERCEL_TOKEN` on every request
 **Team scoping:** add `?teamId=<id>` (or `?slug=<team-slug>`) on every team-scoped endpoint
-**OpenAPI spec (machine-readable, all endpoints):** https://openapi.vercel.sh/
-**Docs:** https://vercel.com/docs/rest-api
+**OpenAPI spec:** https://openapi.vercel.sh/
+**Official docs:** https://vercel.com/docs/rest-api
 
-## curl boilerplate (mirrored in scripts/_lib.sh)
+## Invocation
 
 ```bash
-vercel_api() {
-  local method="${1:-GET}" path="$2"
-  shift 2
-  curl -fsS \
-    --retry 1 --retry-delay 5 \
-    -X "$method" \
-    -H "Authorization: Bearer $VERCEL_TOKEN" \
-    -H "Accept: application/json" \
-    "https://api.vercel.com${path}" \
-    "$@"
-}
+VERCEL_SKILL_DIR=~/.claude/skills/vercel-cli
 
-# Usage:
-vercel_api GET    "/v2/user"
-vercel_api GET    "/v9/projects?teamId=$VERCEL_TEAM_ID"
-vercel_api POST   "/v1/webhooks?teamId=$VERCEL_TEAM_ID" \
-                  -H "Content-Type: application/json" \
-                  -d '{"url":"https://hooks.example.com","events":["deployment.succeeded"]}'
-vercel_api DELETE "/v1/webhooks/wh_xxx?teamId=$VERCEL_TEAM_ID"
+bunx vercel@latest api /v2/user
+bunx vercel@latest api /v9/projects --scope <team> --paginate
+
+bash "$VERCEL_SKILL_DIR/scripts/vercel-api.sh" GET "/v2/user"
+bash "$VERCEL_SKILL_DIR/scripts/vercel-api.sh" GET "/v9/projects?limit=20"
+bash "$VERCEL_SKILL_DIR/scripts/vercel-api.sh" POST "/v10/projects" \
+  '{"name":"example-project"}'
 ```
 
-`-f` (fail on HTTP error) means the function exits non-zero on 4xx/5xx, suitable for scripts.
+`vercel-api.sh` adds bearer authentication, team scope when resolvable, JSON headers, one bounded retry, and JSON pretty-printing. Keep `VERCEL_TOKEN` in the environment.
 
-## Endpoint categories (33 total)
+## Endpoint categories
 
-The full surface has 250+ individual endpoints across these categories. The OpenAPI spec is authoritative; this is the working set most relevant to bash automation.
+The OpenAPI spec is authoritative. Use this table only to find the likely family, then verify the current path before a mutation.
 
-| Category | Count | Notes |
-|---|---:|---|
-| Projects | 28 | Full CRUD, members, domains, env, pause/resume, transfer |
-| Deployments | 10 | List, get, create, cancel, delete, events, files |
-| Environment | 11 | Bulk ops, encrypted vars, system env |
-| Edge-config | 17 | Two APIs: management + read |
-| Webhooks | 4 | Create, list, get, delete |
-| Domains | 6 | CRUD + verify |
-| Domains-registrar | 16 | Buy, transfer, WHOIS, nameservers |
-| DNS | 4 | List, add, remove records |
-| Aliases | 6 | Full CRUD |
-| Teams | 16 | Members, invitations, billing, access |
-| Drains (Log drains) | 6 | Create, list, delete log-drain configs |
-| Logs | 1 | Runtime logs query |
-| Access-groups | 11 | **Pro/Enterprise only** |
-| Artifacts | 6 | Remote build cache (turborepo) |
-| Checks-v2 | 10 | Deployment quality checks |
-| Feature-flags | 19 | Full feature flag management |
-| Rolling-release | 7 | Gradual rollouts |
-| Microfrontends | 5 | Microfrontend group management |
-| Sandboxes-v2-beta | 40 | Vercel Sandbox compute |
-| Security | 9 | Password protection, OIDC, bypass tokens |
-| Edge-cache | 4 | CDN cache purge |
-| Marketplace | 23 | Integration marketplace |
-| Connect | 6 | Secure Compute networking |
-| Certs | 4 | Certificate management |
-| Billing | 3 | Usage/cost read |
-| User | 4 | Current user info |
-| Static-ips | 1 | **Enterprise only** |
-| Project-routes | 8 | Project-level routing rules |
-| Bulk-redirects | 7 | Bulk redirect management |
-| Api-observability | 2 | OpenAPI / observability |
+| Category | Typical coverage |
+|---|---|
+| Projects | CRUD, members, domains, environment variables, pause and transfer |
+| Deployments | List, inspect, create, cancel, delete, events, and files |
+| Environment | Typed variables, system variables, and bulk operations |
+| Edge Config | Stores, items, tokens, backups, and read API |
+| Webhooks and drains | Delivery configuration and lifecycle |
+| Domains, registrar, DNS, aliases, certificates | Ownership, routing, and TLS |
+| Teams and access groups | Membership, invitations, access, and billing scope |
+| Logs and observability | Runtime logs, activity, metrics, traces, and usage |
+| Security | Deployment protection, bypass tokens, OIDC, and password protection |
+| Cache, redirects, routes, flags, rolling releases | Runtime behavior and traffic control |
+| Marketplace, Connect, Sandbox | Integrations, networking, and compute resources |
 
 ## Most-used endpoints
 
@@ -234,11 +205,11 @@ while true; do
 done
 ```
 
-Or use `vercel inspect <url> --wait --token $VERCEL_TOKEN` (CLI-side polling).
+Prefer `bunx vercel@latest inspect <url> --wait` when CLI-side polling is sufficient.
 
 ## Rate limits
 
-The Vercel REST API has rate limits (not publicly documented per-tier as of April 2026). On 429 responses, `curl -f` surfaces the error as non-zero exit. The `vercel_api` helper retries once with 5s delay; for higher-volume bulk ops, batch and pace your calls. Common observed thresholds: ~100 req/min for unauthenticated, much higher for authenticated personal tokens, much higher for org-scoped tokens.
+On 429 responses, honor `Retry-After` when present. The bundled helper retries once with a five-second delay. For bulk operations, batch and pace requests instead of adding an unbounded retry loop.
 
 ```bash
 if ! response=$(vercel_api GET "/v9/projects" 2>&1); then
@@ -252,13 +223,6 @@ if ! response=$(vercel_api GET "/v9/projects" 2>&1); then
 fi
 ```
 
-## Token generation reminder
+## Token handling
 
-UI: https://vercel.com/account/tokens
-
-**Token scopes:**
-- **Full account** - covers all teams the user belongs to. Highest blast radius.
-- **Single team** - scoped to one team only. Lower blast radius. Recommended for AI agents.
-- **Single project** - currently not supported via the dashboard UI; team-scoped is the smallest practical unit.
-
-Tokens have an optional expiry (recommended for agent use: 30-90 days). Stored in `VERCEL_TOKEN` env var (never in a file). Rotate via the dashboard UI - there's no "rotate" REST endpoint.
+Create tokens at https://vercel.com/account/tokens. Choose the narrowest scope and shortest lifetime compatible with the task. Store the token in `VERCEL_TOKEN`, never in a repository file or command argument. Revoke or rotate it through the account controls when exposure is suspected.

@@ -54,8 +54,8 @@ _clerk_load_env() {
 # Try to load from .env first; this is a no-op if CLERK_SECRET_KEY is already exported.
 _clerk_load_env
 
-# Default API version. Without an explicit header, the API silently resolves to legacy 2021-02-05.
-CLERK_API_VERSION="${CLERK_API_VERSION:-2025-11-10}"
+# Default to the current stable Backend API contract verified on 2026-07-16.
+CLERK_API_VERSION="${CLERK_API_VERSION:-2026-05-12}"
 
 # Require CLERK_SECRET_KEY in the environment (or loadable from a project .env file).
 require_clerk_secret_key() {
@@ -64,11 +64,33 @@ require_clerk_secret_key() {
 Three ways to provide it (highest precedence first):
   1. export CLERK_SECRET_KEY=sk_live_xxx
   2. cd into a project with .env.local containing CLERK_SECRET_KEY=...
-  3. run 'bunx clerk env pull' inside a Clerk-linked project to write .env.local"
+  3. run 'bunx clerk@latest env pull' inside a Clerk-linked project to write .env.local"
   case "$CLERK_SECRET_KEY" in
     sk_test_*|sk_live_*) ;;
     *) err "CLERK_SECRET_KEY format looks wrong (expected 'sk_test_...' or 'sk_live_...', got first 8 chars: '${CLERK_SECRET_KEY:0:8}...')." ;;
   esac
+}
+
+# Resolve a secret without placing its value in the process arguments.
+# Accepted forms: @env:VARIABLE or - for one line from stdin.
+read_secret_arg() {
+  local spec="${1:-}" label="${2:-secret}" name value
+  case "$spec" in
+    @env:*)
+      name="${spec#@env:}"
+      [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || err "invalid environment variable name for $label: $name"
+      value="${!name:-}"
+      [[ -n "$value" ]] || err "$label environment variable is empty: $name"
+      ;;
+    -)
+      IFS= read -r value || err "failed to read $label from stdin"
+      [[ -n "$value" ]] || err "$label read from stdin is empty"
+      ;;
+    *)
+      err "refusing a literal $label in process arguments; use @env:VARIABLE or -"
+      ;;
+  esac
+  printf '%s' "$value"
 }
 
 # URL-encode a single value for query strings.
@@ -86,13 +108,13 @@ urlencode() {
   printf '%s' "$out"
 }
 
-# Authenticated curl against api.clerk.com/v1, with built-in 429 retry honoring Retry-After.
+# Authenticated curl against api.clerk.com/v1, with one bounded 429 retry.
 # Usage: clerk_api METHOD PATH [json_body | curl_extra_args...]
 # Examples:
 #   clerk_api GET    "/users?limit=20"
 #   clerk_api POST   "/organizations" '{"name":"Acme","created_by":"user_xxx"}'
-#   clerk_api PATCH  "/users/user_xxx" '{"public_metadata":{"plan":"pro"}}'
-#   clerk_api DELETE "/sessions/sess_xxx"
+#   clerk_api PATCH  "/users/user_xxx" '{"first_name":"Alice"}'
+#   clerk_api POST   "/sessions/sess_xxx/revoke"
 clerk_api() {
   local method="${1:-GET}" path="${2:?path required}"
   shift 2
@@ -109,7 +131,7 @@ clerk_api() {
     -H "Accept: application/json"
   )
 
-  if [[ $# -gt 0 && "${1:0:1}" == "{" ]]; then
+  if [[ $# -gt 0 && ( "${1:0:1}" == "{" || "${1:0:1}" == "[" ) ]]; then
     args+=(-H "Content-Type: application/json" -d "$1")
     shift
   fi
@@ -117,35 +139,56 @@ clerk_api() {
   args+=("$@")
 
   local url="${CLERK_API_BASE}${path}"
-  local attempt=1 max_attempts=2 response status body retry_after
+  local attempt=1 max_attempts=2 response status body retry_after headers_file
+  local retry_transport=false
+  [[ "$method" == "GET" || "$method" == "HEAD" ]] && retry_transport=true
+  headers_file=$(mktemp "${TMPDIR:-/tmp}/clerk-cli-headers.XXXXXX") \
+    || err "failed to create a temporary headers file"
 
   while [[ $attempt -le $max_attempts ]]; do
-    response=$(curl "${args[@]}" -D /tmp/clerk-cli-headers.$$ "$url" 2>&1) || {
-      [[ $attempt -lt $max_attempts ]] || { rm -f /tmp/clerk-cli-headers.$$; err "curl failed: $response"; }
-      sleep 2; attempt=$((attempt + 1)); continue
+    response=$(curl "${args[@]}" -D "$headers_file" "$url" 2>&1) || {
+      if [[ "$retry_transport" == true && $attempt -lt $max_attempts ]]; then
+        sleep 2
+        attempt=$((attempt + 1))
+        continue
+      fi
+      rm -f "$headers_file"
+      if [[ "$retry_transport" == true ]]; then
+        err "curl failed: $response"
+      fi
+      err "curl failed during ${method} ${path}; the remote outcome is unknown, so the request was not retried: $response"
     }
-    # Last line is the status code; rest is the body.
+
+    # Last line is the status code; the preceding content is the body.
     status="${response##*$'\n'}"
     body="${response%$'\n'*}"
 
     if [[ "$status" == "429" ]]; then
-      retry_after=$(grep -i '^retry-after:' /tmp/clerk-cli-headers.$$ 2>/dev/null | awk '{print $2}' | tr -d '\r' | head -n1)
+      if [[ $attempt -ge $max_attempts ]]; then
+        rm -f "$headers_file"
+        err "API ${method} ${path} remained rate limited after ${max_attempts} attempts"
+      fi
+      retry_after=$(grep -i '^retry-after:' "$headers_file" 2>/dev/null | awk '{print $2}' | tr -d '\r' | head -n1)
       retry_after="${retry_after:-5}"
+      [[ "$retry_after" =~ ^[0-9]+$ ]] || retry_after=5
+      if (( retry_after > 30 )); then
+        rm -f "$headers_file"
+        err "API ${method} ${path} requested a ${retry_after}s rate-limit delay; stopped instead of blocking"
+      fi
       printf '\033[33m!\033[0m 429 rate limited, sleeping %ss before retry\n' "$retry_after" >&2
       sleep "$retry_after"
       attempt=$((attempt + 1))
       continue
     fi
 
-    rm -f /tmp/clerk-cli-headers.$$
+    rm -f "$headers_file"
     if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
       printf '%s' "$body"
       return 0
     fi
-    # Non-2xx, non-429 - surface body and bail.
     err "API ${method} ${path} returned ${status}: $(printf '%s' "$body" | head -c 500)"
   done
 
-  rm -f /tmp/clerk-cli-headers.$$
+  rm -f "$headers_file"
   err "API ${method} ${path} exhausted ${max_attempts} attempts"
 }

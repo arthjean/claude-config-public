@@ -1,86 +1,197 @@
-# `clerk` CLI command reference
+# Clerk CLI command reference
 
-The official CLI is `@clerk/dev-cli`. Invoke as `bunx clerk <subcommand>` - never `npm install -g`. The CLI is interactive-friendly (browser-based auth), but every command also accepts `CLERK_SECRET_KEY` from the environment for headless use.
+This reference was verified against the official `clerk` package version 2.2.0 on 2026-07-16. Always prefer `bunx clerk@latest --mode agent <command> --help` when syntax differs.
 
-Sources: [clerk.com/docs/cli](https://clerk.com/docs/cli), [Introducing Clerk CLI blog post](https://clerk.com/blog/introducing-clerk-cli).
+Sources:
 
-## Top-level commands
+- [Official Clerk CLI documentation](https://clerk.com/docs/cli)
+- [Official Clerk CLI package](https://www.npmjs.com/package/clerk)
+- Local package metadata and `--help` output from `clerk@2.2.0`
 
-| Command | What it does |
+## Invocation
+
+```bash
+bunx clerk@latest --mode agent <command>
+```
+
+The package name is `clerk`. The historical `@clerk/dev-cli` package name is not the current invocation.
+
+Global options:
+
+| Option | Purpose |
 |---|---|
-| `bunx clerk auth login` | Browser-based OAuth login. Stores credentials locally (in `~/.config/clerk/`). |
-| `bunx clerk auth logout` | Clears local credentials. |
-| `bunx clerk auth status` | Shows the linked account + active instance. |
-| `bunx clerk init` | Auto-detects framework (Next.js, React, Vue, Nuxt, Astro, React Router, TanStack Start, Expo, Express, Fastify), installs the SDK, scaffolds middleware + auth pages. |
-| `bunx clerk env pull` | Writes `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` to `.env.local` for the linked instance. |
-| `bunx clerk config pull > clerk-config.json` | Exports the linked instance's full config as JSON. |
-| `bunx clerk config patch <patch.json>` | Applies a JSON diff to the linked instance config (with preview). |
-| `bunx clerk apps list` | Lists Clerk applications visible to the logged-in account. |
-| `bunx clerk apps create <name>` | Walks the dashboard creation flow (interactive). |
-| `bunx clerk open [page]` | Opens the dashboard for the linked instance. Pages: `dashboard`, `users`, `organizations`, `webhooks`, `api-keys`, etc. |
-| `bunx clerk doctor` | Validates the integration in the current repo (publishable key, middleware setup, env vars). |
-| `bunx clerk skill install` | Installs Clerk's "agent knowledge modules" (markdown docs/snippets) into the project. |
-| `bunx clerk update` | Self-updates the CLI. |
-| `bunx clerk deploy` | **Coming soon** - ship reviewed auth changes from the CLI. Not available as of Apr 2026. |
+| `-v, --version` | Print the installed CLI version |
+| `--input-json <json|@file|->` | Pass command options as JSON, a file, or stdin |
+| `--mode <human|agent>` | Force interaction and output mode |
+| `--verbose` | Include debug output |
+| `-h, --help` | Show current command help |
 
-## `clerk api` - Backend API proxy
+Use `--mode agent` for Codex. It avoids interactive selection and returns machine-oriented output. Do not pass a literal secret through `--secret-key`; export `CLERK_SECRET_KEY` instead.
 
-This is the most useful command for replacing MCP-style operations. It forwards any `GET`/`POST`/`PATCH`/`DELETE` to the linked instance's Backend API with the secret key already attached.
+## Current command groups
 
-```bash
-# Discover all available endpoints (includes path patterns + methods)
-bunx clerk api ls
+| Command | Purpose | Important boundary |
+|---|---|---|
+| `init` | Detect framework, install Clerk SDK, and scaffold auth | Writes project files and dependencies |
+| `auth login` | Authenticate the CLI account with OAuth | Opens a browser and stores credentials |
+| `auth logout` | Remove stored account credentials | Mutates local credential state |
+| `link` / `unlink` | Connect or disconnect the current project | Mutates project context |
+| `whoami` | Show account and linked application | Read-only target check |
+| `open` | Open a Clerk resource | Browser-only |
+| `apps list` | List applications | Read-only |
+| `apps create <name>` | Create an application through the Platform API | Account-level mutation |
+| `users list` | List and filter users | Read-only |
+| `users create` | Create a user | Supports `--dry-run` and `--yes` |
+| `users open` | Open a user in the dashboard | Browser-only unless `--print` |
+| `impersonate` / `imp` | Create or revoke impersonation | Security-sensitive and token-producing |
+| `env pull` | Pull instance keys into a local env file | Secret-bearing file write |
+| `config pull` | Read instance configuration | May contain sensitive configuration |
+| `config schema` | Inspect supported config keys | Read-only |
+| `config patch` | Partially update instance configuration | Supports `--dry-run` |
+| `config put` | Replace full instance configuration | Wide-impact mutation |
+| `enable` / `disable` | Toggle Clerk features | Instance-wide mutation |
+| `api` | Call Backend, Platform, or Frontend API endpoints | Supports discovery and dry-run |
+| `doctor` | Diagnose the current integration | `--fix` writes changes |
+| `deploy` | Deploy an application to production | Production-wide operation |
+| `deploy status` | Inspect production deploy completeness | Read-only |
+| `webhooks token` | Create a stable relay token | Secret-producing |
+| `webhooks listen` | Stream and forward webhook events | Long-running local process |
+| `webhooks verify` | Verify a delivery signature locally | Offline and read-only |
+| `completion` | Generate shell completion | Writes only when redirected |
+| `update` | Update a global CLI installation | Do not use with ephemeral bunx |
 
-# GET (default)
-bunx clerk api /users
-bunx clerk api /users/user_xxx
-bunx clerk api "/users?limit=50&order_by=-created_at"
+## Target resolution
 
-# POST with body
-bunx clerk api /organizations -X POST \
-  -d '{"name":"Acme","created_by":"user_xxx"}'
-
-# PATCH
-bunx clerk api /users/user_xxx -X PATCH \
-  -d '{"public_metadata":{"plan":"pro"}}'
-
-# DELETE
-bunx clerk api /sessions/sess_xxx -X DELETE
-```
-
-The CLI auto-injects `Authorization: Bearer <secret>` and `Clerk-API-Version: 2025-11-10` (matches the SKILL default).
-
-**Caveat:** if you have multiple instances linked, `clerk api` uses whichever is "active." Switch with `bunx clerk auth login` and pick the right instance, or unset and re-export `CLERK_SECRET_KEY` to override.
-
-## When to use the CLI vs. `scripts/`
-
-| Use case | Reach for |
-|---|---|
-| One-off ad-hoc read | `bunx clerk api /users/user_xxx` |
-| Discovering the API surface | `bunx clerk api ls` |
-| Scripted, repeatable workflow | `scripts/clerk-*.sh` (rate-limit-aware, jq-formatted) |
-| Multi-instance switching | Profile env files + `scripts/clerk-api.sh` |
-| One-time framework scaffold | `bunx clerk init` |
-| Pulling `.env.local` for local dev | `bunx clerk env pull` |
-| Verifying integration in a repo | `bunx clerk doctor` |
-
-## Auth flow nuances for headless use
-
-The CLI's interactive `clerk auth login` won't work in CI or agent contexts. For those:
+Use the linked current project:
 
 ```bash
-export CLERK_SECRET_KEY=sk_live_<redacted>
-bunx clerk api /users   # secret key from env takes precedence
+bunx clerk@latest --mode agent whoami
 ```
 
-The CLI honors `CLERK_SECRET_KEY` even without a login session. This is the supported pattern for headless agents.
-
-## Output format
-
-All `clerk api` calls return raw JSON to stdout - no pretty-printing. Pipe through `jq`:
+Or target an application and instance explicitly when the command supports it:
 
 ```bash
-bunx clerk api /users | jq '.[] | {id, email: .email_addresses[0].email_address}'
+bunx clerk@latest --mode agent users list \
+  --app app_xxx \
+  --instance dev \
+  --json
 ```
 
-The `scripts/clerk-*.sh` helpers pre-pipe through `jq .` so you get readable output by default.
+Instance values can be `dev`, `prod`, or a full instance ID. For mutations, explicit targeting is preferable when more than one target is plausible.
+
+## Users
+
+List users as JSON:
+
+```bash
+bunx clerk@latest --mode agent users list \
+  --json \
+  --limit 100 \
+  --offset 0 \
+  --order-by=-created_at
+```
+
+Current list filters include `--query`, `--email-address`, `--phone-number`, `--username`, `--user-id`, and `--external-id`. The native CLI accepts a maximum `--limit` of 250 even though raw Backend API endpoints can accept different limits.
+
+Preview creation:
+
+```bash
+bunx clerk@latest --mode agent users create \
+  --email alice@example.com \
+  --first-name Alice \
+  --dry-run
+```
+
+After the exact target and payload are authorized:
+
+```bash
+bunx clerk@latest --mode agent users create \
+  --email alice@example.com \
+  --first-name Alice \
+  --yes \
+  --json
+```
+
+For complex request bodies, use `--file <path>` rather than placing passwords or sensitive metadata in process arguments.
+
+## Backend API proxy
+
+Discover endpoints:
+
+```bash
+bunx clerk@latest --mode agent api ls
+bunx clerk@latest --mode agent api ls users
+```
+
+Read a resource:
+
+```bash
+bunx clerk@latest --mode agent api /users/user_xxx
+```
+
+Preview a mutation:
+
+```bash
+bunx clerk@latest --mode agent api /users/user_xxx \
+  -X PATCH \
+  -d '{"first_name":"Alice"}' \
+  --dry-run
+```
+
+Execute only after inspection:
+
+```bash
+bunx clerk@latest --mode agent api /users/user_xxx \
+  -X PATCH \
+  -d '{"first_name":"Alice"}' \
+  --yes
+```
+
+`api` defaults to GET, or POST when a body is provided. It supports `-X/--method`, `-d/--data`, `--file`, `--include`, `--app`, `--instance`, `--platform`, `--fapi`, `--dry-run`, and `--yes`.
+
+Use `--platform` only for Platform API work explicitly in scope. Use `--fapi` only for public, unauthenticated Frontend API reads. The bundled Bash helpers target the Backend API only.
+
+## Configuration
+
+Inspect schema and current values before changing config:
+
+```bash
+bunx clerk@latest --mode agent config schema --keys organization_settings
+bunx clerk@latest --mode agent config pull
+```
+
+Preview and apply a narrow patch:
+
+```bash
+bunx clerk@latest --mode agent config patch \
+  --json '{"organization_settings":{"enabled":true}}' \
+  --dry-run
+
+bunx clerk@latest --mode agent config patch \
+  --json '{"organization_settings":{"enabled":true}}'
+```
+
+Use `config put` only for an explicit full replacement. Prefer `patch` for local changes.
+
+## Browser and long-running commands
+
+Do not run these implicitly:
+
+- `auth login`
+- `open`
+- `users open` without `--print`
+- `imp --open`
+- interactive production `deploy`
+- `webhooks listen`
+
+For a dashboard URL without navigation, use a print option where available:
+
+```bash
+bunx clerk@latest --mode agent users open user_xxx --print
+```
+
+For any undocumented flag, run the narrowest current help command:
+
+```bash
+bunx clerk@latest --mode agent <group> <subcommand> --help
+```

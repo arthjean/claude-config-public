@@ -42,7 +42,7 @@ case "$action" in
     ;;
 
   providers)
-    # OAuth providers list - read-only via Backend API; configuration is dashboard-only.
+    # Read through BAPI. Use the native config CLI for supported provider changes.
     clerk_api GET "/instance" | jq '.auth_config // {} | {social: .social_settings, oauth: .oauth_applications_enabled}'
     ;;
 

@@ -13,6 +13,7 @@
 
 source "$(dirname "$0")/_lib.sh"
 require_posthog_key
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 
 [[ $# -ge 1 ]] || err "usage: $0 {ls|ls-org|get|create|update|switch|me} [args...]"
 
@@ -51,7 +52,7 @@ case "$action" in
     # Verify the ID is reachable before printing the export hint.
     posthog_api GET "/api/projects/$pid/" >/dev/null
     printf 'export POSTHOG_PROJECT_ID=%s\n' "$pid"
-    printf '\n# Run:  eval "$(scripts/posthog-projects.sh switch %s)"\n' "$pid" >&2
+    printf '\n# Run: eval "$(bash %q switch %q)"\n' "$SCRIPT_DIR/posthog-projects.sh" "$pid" >&2
     ;;
 
   me)

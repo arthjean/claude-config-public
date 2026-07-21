@@ -1,6 +1,14 @@
-# resend-cli - command index
+# Bundled Resend Bash helper index
 
-Every bash subcommand exposed by this skill, grouped by resource. For full flag descriptions, run any script with no args (it prints its usage).
+Use this reference only when the official CLI does not cover the required workflow or a deterministic REST pipeline is useful. Prefer the native commands in [cli-parity.md](cli-parity.md).
+
+Every script path below means:
+
+```bash
+bash "$RESEND_SKILL_DIR/scripts/<script>.sh" ...
+```
+
+Keep the working directory in the user's project. Do not invoke `scripts/...` relative to that directory. For full helper usage, run the script with no arguments.
 
 ## Preflight
 
@@ -52,7 +60,7 @@ Every bash subcommand exposed by this skill, grouped by resource. For full flag 
 
 | Subcommand | Args                                                                          |
 |------------|-------------------------------------------------------------------------------|
-| `create`   | `--name <label> --permission full_access|sending_access [--domain <dom_id>]`  |
+| `create`   | `--name <label> --permission full_access|sending_access [--domain <dom_id>] --out <secure-json-path>` |
 | `ls`       |                                                                               |
 | `rm`       | `<key_id>`                                                                    |
 
@@ -128,34 +136,39 @@ Every bash subcommand exposed by this skill, grouped by resource. For full flag 
 
 | Subcommand | Args                                                                                                       |
 |------------|------------------------------------------------------------------------------------------------------------|
-| `create`   | `--url <https://...> --events evt,evt,... [--name --enabled true|false]`                                    |
+| `create`   | `--url <https://...> --events evt,evt,... [--name --enabled true|false] --out <secure-json-path>`           |
 | `ls`       |                                                                                                            |
 | `get`      | `<webhook_id>`                                                                                             |
 | `update`   | `<webhook_id> [--url --events --name --enabled]`                                                            |
 | `rm`       | `<webhook_id>`                                                                                             |
-| `listen`   | `[--port N ...]` - delegates to `bunx resend-cli webhooks listen` for the local tunnel                      |
+| `listen`   | `[--port N ...]` - delegates to `bunx --bun resend-cli@latest webhooks listen`                             |
 
-## Automations *(MCP gap)*
+## Automations
 
-| Subcommand | Args                                                                |
-|------------|---------------------------------------------------------------------|
-| `create`   | `--name <name> --trigger <event> [--body @def.json]`                |
-| `ls`       |                                                                     |
-| `get`      | `<automation_id>`                                                   |
-| `update`   | `<automation_id> <@file.json|json-body>`                            |
-| `stop`     | `<automation_id>`                                                   |
-| `rm`       | `<automation_id>`                                                   |
+`resend-automations.sh` delegates arguments unchanged to the current official CLI. Use native CLI flags:
 
-## Events *(MCP gap)*
+| Subcommand | Args                                                   |
+|------------|--------------------------------------------------------|
+| `create`   | `--name <name> --file <workflow.json>`                 |
+| `ls`       | `[pagination flags]`                                   |
+| `get`      | `<automation_id>`                                      |
+| `update`   | `<automation_id> --status enabled|disabled`            |
+| `stop`     | `<automation_id>`                                      |
+| `runs`     | `<automation_id>` or current nested run commands       |
+| `rm`       | `<automation_id> --yes`                                |
+
+## Events
+
+`resend-events.sh` delegates arguments unchanged to the current official CLI. Use native CLI flags:
 
 | Subcommand | Args                                                                                  |
 |------------|---------------------------------------------------------------------------------------|
-| `send`     | `--event <name> (--contact <id> | --email <addr>) [--payload @json|json]`             |
-| `create`   | `--name <event_name> [--body @schema.json]` *(event schema CRUD)*                     |
+| `send`     | `--event <name> (--contact-id <id> | --email <addr>) [--payload <json>]`               |
+| `create`   | `--name <event_name> [--schema <json>]`                                               |
 | `ls`       |                                                                                       |
-| `get`      | `<event_schema_id>`                                                                   |
-| `update`   | `<event_schema_id> <@file.json|json-body>`                                            |
-| `rm`       | `<event_schema_id>`                                                                   |
+| `get`      | `<event_id>`                                                                          |
+| `update`   | `<event_id> --schema <json|null>`                                                     |
+| `rm`       | `<event_id> --yes`                                                                    |
 
 ## Logs *(MCP gap)*
 
@@ -168,27 +181,27 @@ Every bash subcommand exposed by this skill, grouped by resource. For full flag 
 
 ```bash
 # Hello world (auto-loads RESEND_API_KEY from .env.local)
-scripts/resend-emails.sh send --from 'Acme <hi@acme.com>' --to me@dev.com --subject Hi --html '<p>Hi</p>'
+bash "$RESEND_SKILL_DIR/scripts/resend-emails.sh" send --from 'Acme <hi@acme.com>' --to me@dev.com --subject Hi --html '<p>Hi</p>'
 
 # Idempotent transactional send
-scripts/resend-emails.sh send --to user@x.com --subject Welcome --html @welcome.html --idempotency-key signup-42
+bash "$RESEND_SKILL_DIR/scripts/resend-emails.sh" send --to user@x.com --subject Welcome --html @welcome.html --idempotency-key signup-42
 
 # Broadcast to a segment
-scripts/resend-segments.sh create --name VIPs --filter @vips.json | jq -r .id
-scripts/resend-broadcasts.sh create --from 'Acme <hi@acme.com>' --subject "Launch" --html @launch.html --segment seg_abc
-scripts/resend-broadcasts.sh send <broadcast_id>
+bash "$RESEND_SKILL_DIR/scripts/resend-segments.sh" create --name VIPs --filter @vips.json | jq -r .id
+bash "$RESEND_SKILL_DIR/scripts/resend-broadcasts.sh" create --from 'Acme <hi@acme.com>' --subject "Launch" --html @launch.html --segment seg_abc
+bash "$RESEND_SKILL_DIR/scripts/resend-broadcasts.sh" send <broadcast_id>
 
 # Add and verify a domain
-scripts/resend-domains.sh create --name acme.com --region eu-west-1
-scripts/resend-domains.sh dns <domain_id>     # shows DNS records to add
-scripts/resend-domains.sh verify <domain_id>  # after DNS is propagated
+bash "$RESEND_SKILL_DIR/scripts/resend-domains.sh" create --name acme.com --region eu-west-1
+bash "$RESEND_SKILL_DIR/scripts/resend-domains.sh" dns <domain_id>
+bash "$RESEND_SKILL_DIR/scripts/resend-domains.sh" verify <domain_id>
 
 # Trigger an automation
-scripts/resend-events.sh send --event user.created --email a@b.com --payload '{"plan":"pro"}'
+bunx --bun resend-cli@latest events send --event user.created --email a@b.com --payload '{"plan":"pro"}' -q
 
 # Debug a 422
-scripts/resend-logs.sh ls --status 422 --limit 20
+bash "$RESEND_SKILL_DIR/scripts/resend-logs.sh" ls --status 422 --limit 20
 
 # All emails sent in the last few pages
-scripts/resend-emails.sh ls --limit 100 | jq -c 'select(.created_at >= "2026-05-01")'
+bash "$RESEND_SKILL_DIR/scripts/resend-emails.sh" ls --limit 100 | jq -c 'select(.created_at >= "2026-05-01")'
 ```

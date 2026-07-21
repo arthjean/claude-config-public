@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# vercel-edge-config.sh - edge config & item CRUD via REST API.
-# REST-only - no CLI subcommand exists for edge config items.
+# vercel-edge-config.sh - deterministic Edge Config and item CRUD via REST API.
+# Use when JSON patch files or stable raw responses are preferable to the native CLI.
 #
 # Usage:
 #   ./vercel-edge-config.sh list

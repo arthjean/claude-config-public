@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vercel-deploy.sh - deploy current directory and return structured JSON.
-# Replaces MCP `deploy_to_vercel`. Wraps `vercel deploy` with --token and parses
+# Replaces MCP `deploy_to_vercel`. Wraps `vercel deploy` and parses
 # the resulting URL into JSON {url, state, id, target} for downstream piping.
 #
 # Usage:
@@ -29,7 +29,6 @@ deploy_log=$(mktemp)
 trap 'rm -f "$deploy_log"' EXIT
 
 if ! url=$(bunx vercel@latest deploy \
-  --token "$VERCEL_TOKEN" \
   --yes \
   "${scope_args[@]}" \
   "$@" 2>"$deploy_log"); then

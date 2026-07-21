@@ -1,76 +1,76 @@
-# Shared bash helpers for neon-cli scripts.
-# Source from each script: source "$(dirname "$0")/_lib.sh"
+#!/usr/bin/env bash
 
 set -euo pipefail
 
-err() { printf '\033[31mERROR\033[0m: %s\n' "$1" >&2; exit 1; }
+err() {
+  printf 'ERROR: %s\n' "$1" >&2
+  exit 1
+}
 
-# Require NEON_API_KEY in the environment.
 require_neon_api_key() {
   [[ -n "${NEON_API_KEY:-}" ]] || err \
-    "NEON_API_KEY is not set. Generate at https://console.neon.tech/app/settings?modal=create_api_key and: export NEON_API_KEY=neon_api_xxx"
+    "NEON_API_KEY is not set. Export a scoped Neon API key before running this command."
 }
 
-# Resolve project ID from arg, NEON_PROJECT_ID, or pinned context. Echoes the ID.
-resolve_project_id() {
-  local override="${1:-}"
-  if [[ -n "$override" ]]; then
-    echo "$override"; return 0
-  fi
-  if [[ -n "${NEON_PROJECT_ID:-}" ]]; then
-    echo "$NEON_PROJECT_ID"; return 0
-  fi
-  # Try pinned context
-  local ctx="${NEON_CONTEXT_FILE:-$HOME/.config/neonctl/context.json}"
-  if [[ -f "$ctx" ]]; then
-    local pid
-    pid=$(jq -r '.projectId // empty' "$ctx" 2>/dev/null || true)
-    if [[ -n "$pid" ]]; then
-      echo "$pid"; return 0
-    fi
-  fi
-  err "no project ID. Pass via env (NEON_PROJECT_ID=...), pin with 'bunx neonctl@latest set-context --project-id <ID>', or pass as second arg to the script."
+validate_connection_mode() {
+  case "$1" in
+    direct | pooled)
+      ;;
+    *)
+      err "connection mode must be 'direct' or 'pooled', got: $1"
+      ;;
+  esac
 }
 
-# Get a connection string for a branch. Args: branch [pooled|direct] [project_id]
+# Let neonctl resolve the nearest .neon file when no explicit project is supplied.
 neon_conn() {
   local branch="${1:?branch required}"
   local mode="${2:-direct}"
-  local pid
-  pid=$(resolve_project_id "${3:-}")
+  local project_id="${3:-${NEON_PROJECT_ID:-}}"
+  local database="${4:-}"
 
-  local pooled_flag=()
-  [[ "$mode" == "pooled" ]] && pooled_flag=(--pooled)
+  validate_connection_mode "$mode"
+
+  local project_args=()
+  local pooled_args=()
+  local database_args=()
+
+  [[ -n "$project_id" ]] && project_args=(--project-id "$project_id")
+  [[ "$mode" == "pooled" ]] && pooled_args=(--pooled)
+  [[ -n "$database" ]] && database_args=(--database-name "$database")
 
   bunx neonctl@latest cs "$branch" \
-    --project-id "$pid" \
-    --no-color \
-    "${pooled_flag[@]}"
+    "${project_args[@]}" \
+    "${database_args[@]}" \
+    "${pooled_args[@]}" \
+    --no-color
 }
 
-# Run a single SQL statement. Args: branch sql [pooled|direct] [project_id]
 neon_psql_c() {
   local branch="${1:?branch required}"
   local sql="${2:?sql required}"
   local mode="${3:-pooled}"
-  local pid="${4:-}"
-
+  local project_id="${4:-}"
+  local database="${5:-}"
   local conn
-  conn=$(neon_conn "$branch" "$mode" "$pid")
-  psql "$conn" -At -c "$sql"
+
+  conn="$(neon_conn "$branch" "$mode" "$project_id" "$database")"
+  psql "$conn" -v ON_ERROR_STOP=1 -At -c "$sql"
 }
 
-# Run a multi-statement script (from stdin or file) in a single transaction.
-# Args: branch [file] [direct|pooled] [project_id]   (omitted file = read stdin)
+# A direct connection is the safe default because transaction files often contain DDL.
 neon_psql_tx() {
   local branch="${1:?branch required}"
   local file="${2:-}"
-  local mode="${3:-direct}"  # transactions default to direct (DDL-safe)
-  local pid="${4:-}"
-
+  local mode="${3:-direct}"
+  local project_id="${4:-}"
+  local database="${5:-}"
   local conn
-  conn=$(neon_conn "$branch" "$mode" "$pid")
-  if [[ -n "$file" && -f "$file" ]]; then
+
+  conn="$(neon_conn "$branch" "$mode" "$project_id" "$database")"
+
+  if [[ -n "$file" ]]; then
+    [[ -f "$file" ]] || err "file not found: $file"
     psql "$conn" -v ON_ERROR_STOP=1 -1 -f "$file"
   else
     psql "$conn" -v ON_ERROR_STOP=1 -1

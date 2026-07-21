@@ -6,8 +6,8 @@
 # Usage:
 #   ./vercel-env.sh ls     <project-id-or-name>
 #   ./vercel-env.sh get    <project-id-or-name> <env-id>
-#   ./vercel-env.sh add    <project-id-or-name> <KEY> <VALUE> <target> [target...] [type]
-#   ./vercel-env.sh update <project-id-or-name> <env-id> <new-value>
+#   ./vercel-env.sh add    <project-id-or-name> <KEY> <VALUE|@env:NAME|-> <target> [target...] [type]
+#   ./vercel-env.sh update <project-id-or-name> <env-id> <new-value|@env:NAME|->
 #   ./vercel-env.sh rm     <project-id-or-name> <env-id>
 #
 # Targets: production | preview | development (one or more, space-separated)
@@ -15,14 +15,33 @@
 #
 # Examples:
 #   ./vercel-env.sh ls my-app
-#   ./vercel-env.sh add my-app DATABASE_URL "postgres://..." production preview encrypted
-#   ./vercel-env.sh add my-app STRIPE_SECRET sk_live_... production sensitive
+#   ./vercel-env.sh add my-app DATABASE_URL @env:DATABASE_URL production preview encrypted
+#   printf '%s' "$STRIPE_SECRET" | ./vercel-env.sh add my-app STRIPE_SECRET - production sensitive
 #   ./vercel-env.sh rm my-app env_xxx
 
 source "$(dirname "$0")/_lib.sh"
 require_vercel_token
 
 [[ $# -ge 2 ]] || err "usage: $0 {ls|get|add|update|rm} <project> [args...]"
+
+resolve_value_arg() {
+  local value_arg="${1:?value argument required}"
+  case "$value_arg" in
+    @env:*)
+      local value_name="${value_arg#@env:}"
+      [[ "$value_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+        || err "invalid environment variable name: $value_name"
+      [[ -v "$value_name" ]] || err "environment variable is not set: $value_name"
+      printf '%s' "${!value_name}"
+      ;;
+    -)
+      cat
+      ;;
+    *)
+      printf '%s' "$value_arg"
+      ;;
+  esac
+}
 
 action="$1"
 project="$2"
@@ -43,8 +62,9 @@ case "$action" in
 
   add)
     [[ $# -ge 3 ]] || err "usage: $0 add <project> <KEY> <VALUE> <target> [target...] [type]"
-    key="$1"; value="$2"
+    key="$1"; value_arg="$2"
     shift 2
+    value=$(resolve_value_arg "$value_arg")
     # Remaining args: targets (production|preview|development) and optionally type at the end.
     type="encrypted"
     targets=()
@@ -72,7 +92,7 @@ case "$action" in
 
   update)
     [[ $# -ge 2 ]] || err "usage: $0 update <project> <env-id> <new-value>"
-    env_id="$1"; new_value="$2"
+    env_id="$1"; new_value=$(resolve_value_arg "$2")
     body=$(jq -nc --arg value "$new_value" '{value: $value}')
     path=$(with_team_query "/v9/projects/$project/env/$env_id")
     vercel_api PATCH "$path" "$body" | jq .

@@ -1,6 +1,8 @@
 # HogQL cookbook
 
-Canonical patterns for common analyses. Run with `scripts/posthog-query.sh hogql "<sql>"` (or `hogql-file <path>` for multi-line). Set `POSTHOG_PROJECT_ID` first.
+Use these patterns only when the official typed `query-*` tools cannot express the analysis. Before writing SQL against collected data, use the native `read-data-schema` tool to verify event names, properties, and relevant values in the active project.
+
+Run a reviewed query with `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" hogql "<sql>"`, or use `hogql-file <path>` for multi-line input. Set and verify `POSTHOG_PROJECT_ID` first.
 
 HogQL is ClickHouse SQL with PostHog-specific functions and pre-joined tables (`events`, `persons`, `sessions`, `session_replay_events`, `groups`, warehouse tables you've connected).
 
@@ -179,7 +181,7 @@ ORDER BY errors DESC
 LIMIT 50
 ```
 
-Combine with `scripts/posthog-recordings.sh url <session_id>` to open the replay.
+Generate a replay URL with `bash "$POSTHOG_SKILL_DIR/scripts/posthog-recordings.sh" url <session_id>`. Open it only when the user explicitly requested browser navigation.
 
 ## Feature flag exposure → conversion
 
@@ -210,7 +212,7 @@ ORDER BY conv_pct DESC
 
 ## Joining a data warehouse table - Stripe revenue by signup cohort
 
-Assumes you've connected Stripe via `scripts/posthog-warehouse.sh source-create '...'` and the `stripe_charges` table is available.
+Assumes you've connected Stripe via `$POSTHOG_SKILL_DIR/scripts/posthog-warehouse.sh source-create '...'` and the `stripe_charges` table is available.
 
 ```sql
 WITH signups AS (
@@ -231,9 +233,9 @@ ORDER BY cohort_month DESC
 
 ## Tips
 
-- **Always cap with `LIMIT`** unless you intentionally want all rows. The query endpoint counts toward the 2,400/hour quota; aborted huge queries still cost.
+- **Cap exploratory output with `LIMIT`** unless the task explicitly needs every row. Large and aborted queries still consume capacity.
 - **`now() - INTERVAL N DAY`** is the canonical recency filter. `today()` is start-of-day UTC.
 - **`person.properties.X`** reads the *current* property value at query time, not the historical value. For historical attribution use the value captured on the event (`properties.X`).
-- **`$pageview`, `$identify`, `$capture`, `$exception`, `$feature_flag_called`, `$ai_generation`, `$rageclick`** are PostHog auto-captured events; `$`-prefixed properties are auto-captured property names.
-- **Validate first**: `scripts/posthog-query.sh validate "<sql>"` returns syntax errors + cost estimate before you spend the quota.
-- **Async for >30s queries**: `scripts/posthog-query.sh async "<sql>"` returns a `client_query_id` immediately; poll with `status`.
+- **Do not assume `$`-prefixed events or properties exist.** Discover them in the active project's data schema first.
+- **Validate first**: `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" validate "<sql>"` returns HogQL metadata and syntax diagnostics without running the analytical query.
+- **Use async for long queries**: `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" async "<sql>"` returns a `client_query_id`; poll it with `status` at a bounded cadence.

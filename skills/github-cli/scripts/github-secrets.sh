@@ -90,7 +90,7 @@ case "$action" in
         *) err "unknown flag: $1" ;;
       esac
     done
-    command -v gh >/dev/null 2>&1 || err "'gh' is required for 'set' (handles libsodium encryption). Install: sudo dnf install gh"
+    command -v gh >/dev/null 2>&1 || err "'gh' is required for 'set' (handles libsodium encryption). Install it with your OS package manager."
     case "$scope" in
       repo)
         printf '%s' "$value" | gh secret set "$name" --repo "$repo" --body - ;;

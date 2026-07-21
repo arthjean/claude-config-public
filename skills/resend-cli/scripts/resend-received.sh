@@ -49,11 +49,12 @@ case "$action" in
     done
     resp=$(resend_api GET "/received-emails/$eid/attachments/$aid")
     if [[ -n "$out" ]]; then
+      [[ ! -e "$out" ]] || err "refusing to overwrite existing path: $out"
       # If response contains base64 content, decode to file; otherwise dump JSON.
       content=$(printf '%s' "$resp" | jq -r '.content // .data // ""' 2>/dev/null || echo "")
       if [[ -n "$content" && "$content" != "null" ]]; then
         printf '%s' "$content" | base64 -d > "$out" 2>/dev/null || printf '%s' "$content" > "$out"
-        printf '\033[32m✓\033[0m attachment saved to %s\n' "$out"
+        printf 'OK: attachment saved to %s\n' "$out"
       else
         printf '%s' "$resp" | pretty
       fi

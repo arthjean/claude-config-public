@@ -1,16 +1,16 @@
-# Security Checklist - Detailed Vulnerability Patterns
+# Security Checklist — Detailed Vulnerability Patterns
 
 ## Table of Contents
 
-1. [Injection](#1-injection) - SQL, XSS, Command, Path Traversal, Template
-2. [Authentication & Authorization](#2-authentication--authorization) - Broken Access, Auth Bypass, IDOR
-3. [Cryptography](#3-cryptography) - Weak Algos, Hardcoded Keys, Insecure Random
-4. [Secrets Exposure](#4-secrets-exposure) - Hardcoded Credentials, Committed Env Files
-5. [Data Handling](#5-data-handling) - Deserialization, Sensitive Data, Input Validation
-6. [Configuration](#6-configuration) - Misconfiguration, CSRF, SSRF
-7. [Dependencies](#7-dependencies) - CVEs, Unmaintained Packages
-8. [AI-Generated Code Anti-Patterns](#8-ai-generated-code-anti-patterns) - eval, innerHTML, Math.random
-9. [Calibration Examples](#9-calibration-examples) - True Positive, False Positive, Borderline
+1. [Injection](#1-injection) — SQL, XSS, Command, Path Traversal, Template
+2. [Authentication & Authorization](#2-authentication--authorization) — Broken Access, Auth Bypass, IDOR
+3. [Cryptography](#3-cryptography) — Weak Algos, Hardcoded Keys, Insecure Random
+4. [Secrets Exposure](#4-secrets-exposure) — Hardcoded Credentials, Committed Env Files
+5. [Data Handling](#5-data-handling) — Deserialization, Sensitive Data, Input Validation
+6. [Configuration](#6-configuration) — Misconfiguration, CSRF, SSRF
+7. [Dependencies](#7-dependencies) — CVEs, Unmaintained Packages
+8. [AI-Generated Code Anti-Patterns](#8-ai-generated-code-anti-patterns) — eval, innerHTML, Math.random
+9. [Calibration Examples](#9-calibration-examples) — True Positive, False Positive, Borderline
 
 ---
 
@@ -26,7 +26,7 @@
 | Rust | `format!("SELECT * FROM users WHERE id={}", id)` | `sqlx::query("SELECT * FROM users WHERE id = $1").bind(id)` |
 | Go | `fmt.Sprintf("SELECT * FROM users WHERE id=%s", id)` | `db.Query("SELECT * FROM users WHERE id=$1", id)` |
 
-### XSS - Cross-Site Scripting (CWE-79)
+### XSS — Cross-Site Scripting (CWE-79)
 **Indicators:** `innerHTML`, `dangerouslySetInnerHTML`, `v-html`, `{!! !!}`, `| safe`, unescaped template variables, `document.write()`.
 
 Check for:
@@ -210,7 +210,7 @@ Patterns commonly introduced by AI code generation that are security-relevant:
 
 These examples calibrate the boundary between true positives, false positives, and borderline findings. Use them to anchor your severity and confidence assessments.
 
-### Example A - True Positive (CRITICAL, HIGH confidence)
+### Example A — True Positive (CRITICAL, HIGH confidence)
 
 **Input code (Python/Flask):**
 ```python
@@ -229,7 +229,7 @@ def get_user(id):
 - Severity: CRITICAL | Confidence: HIGH
 - Description: User-controlled route parameter `id` is interpolated directly into
   a SQL query via f-string. No parameterization or input validation.
-- Reasoning: Full dataflow traced - route parameter flows directly into db.execute()
+- Reasoning: Full dataflow traced — route parameter flows directly into db.execute()
   with no sanitization. Exploitable remotely without authentication via crafted URL.
   RCE possible on some database engines.
 - Remediation:
@@ -241,7 +241,7 @@ def get_user(id):
   result = db.execute("SELECT * FROM users WHERE id = :id", {"id": id})
 ```
 
-### Example B - False Positive (DO NOT flag)
+### Example B — False Positive (DO NOT flag)
 
 **Input code (Python/SQLAlchemy):**
 ```python
@@ -260,9 +260,9 @@ def get_user(user_id):
 - `@login_required` provides authentication.
 - This is a safe, idiomatic pattern. Flagging it would be a false positive.
 
-**Note:** This may still warrant an INFO finding for missing ownership check (user A can access user B's data) - but that is an authorization issue (CWE-284), not SQL injection.
+**Note:** This may still warrant an INFO finding for missing ownership check (user A can access user B's data) — but that is an authorization issue (CWE-284), not SQL injection.
 
-### Example C - Borderline (MEDIUM severity, LOW confidence)
+### Example C — Borderline (MEDIUM severity, LOW confidence)
 
 **Input code (Node.js/Express):**
 ```javascript
@@ -286,7 +286,7 @@ app.get("/api/file", (req, res) => {
 - Description: User-controlled query parameter `name` is used to construct a file
   path. path.basename() strips directory components, which mitigates basic ../
   traversal, but does not protect against all edge cases.
-- Reasoning: path.basename() provides partial mitigation - it strips directory
+- Reasoning: path.basename() provides partial mitigation — it strips directory
   separators on the current OS. However, it does not canonicalize (resolve symlinks)
   and may behave differently on Windows vs Unix for mixed separators. The uploads
   directory may contain symlinks. Confidence is LOW because the primary traversal

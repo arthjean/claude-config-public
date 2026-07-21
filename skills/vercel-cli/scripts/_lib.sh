@@ -47,7 +47,7 @@ resolve_project_id() {
     pid=$(jq -r '.projectId // empty' .vercel/project.json 2>/dev/null || true)
     [[ -n "$pid" ]] && { echo "$pid"; return 0; }
   fi
-  err "no project ID. Pass via env (VERCEL_PROJECT_ID=...), run 'bunx vercel@latest link --token \$VERCEL_TOKEN --yes' inside the repo, or pass as an arg to the script."
+  err "no project ID. Pass via env (VERCEL_PROJECT_ID=...), run 'bunx vercel@latest link --yes' inside the repo, or pass an explicit project argument."
 }
 
 # Append ?teamId=<id> to a path if a team is resolvable. Echoes the path with query string.
@@ -78,22 +78,31 @@ vercel_api() {
   local method="${1:-GET}" path="${2:?path required}"
   shift 2
 
+  local body=""
+  local auth_config
+  auth_config=$(printf 'header = "Authorization: Bearer %s"\n' "$VERCEL_TOKEN")
+
   local args=(
     -fsS
     --retry 1 --retry-delay 5 --retry-connrefused
     -X "$method"
-    -H "Authorization: Bearer $VERCEL_TOKEN"
     -H "Accept: application/json"
   )
 
   # If the next arg looks like a JSON body, attach it.
-  if [[ $# -gt 0 && "${1:0:1}" == "{" ]]; then
-    args+=(-H "Content-Type: application/json" -d "$1")
+  if [[ $# -gt 0 && ( "${1:0:1}" == "{" || "${1:0:1}" == "[" ) ]]; then
+    body="$1"
+    args+=(-H "Content-Type: application/json" --data-binary @-)
     shift
   fi
 
   # Forward any remaining flags (e.g. --data-urlencode).
   args+=("$@")
 
-  curl "${args[@]}" "https://api.vercel.com${path}"
+  if [[ -n "$body" ]]; then
+    printf '%s' "$body" \
+      | curl --config /dev/fd/3 "${args[@]}" "https://api.vercel.com${path}" 3<<<"$auth_config"
+  else
+    curl --config /dev/fd/3 "${args[@]}" "https://api.vercel.com${path}" 3<<<"$auth_config"
+  fi
 }

@@ -160,3 +160,4 @@ case "$action" in
 
   *) err "unknown action: $action  (try: create|ls|get|update|rm|segments|add-segment|rm-segment|topics|set-topics)" ;;
 esac
+

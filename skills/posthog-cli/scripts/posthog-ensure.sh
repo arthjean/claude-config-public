@@ -13,6 +13,7 @@ errors=0
 
 # shellcheck disable=SC1091
 source "$(dirname "$0")/_lib.sh"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 
 # 1. bun (required for bunx - global rule)
 if command -v bun >/dev/null 2>&1; then
@@ -22,13 +23,18 @@ else
   errors=$((errors + 1))
 fi
 
-# 2. @posthog/cli reachable via bunx (optional - used only for sourcemap upload + interactive query)
+# 2. @posthog/cli reachable via bunx (primary agent API and artifact CLI)
 if command -v bun >/dev/null 2>&1; then
-  if version=$(timeout 30 bunx --bun @posthog/cli --version 2>/dev/null | tail -n1); then
-    ok "@posthog/cli ($version) - used for sourcemap upload + interactive HogQL"
+  if command -v timeout >/dev/null 2>&1; then
+    version=$(timeout 30 bunx --bun @posthog/cli@latest --version 2>/dev/null | tail -n1) || true
   else
-    warn "bunx @posthog/cli --version did not return. The CLI is OPTIONAL - bash helpers cover the management API."
-    warn "  If you want the official CLI: bunx @posthog/cli login"
+    version=$(bunx --bun @posthog/cli@latest --version 2>/dev/null | tail -n1) || true
+  fi
+  if [[ -n "$version" ]]; then
+    ok "@posthog/cli ($version) - agent API and artifact operations"
+  else
+    fail "bunx --bun @posthog/cli@latest --version did not return."
+    errors=$((errors + 1))
   fi
 fi
 
@@ -36,7 +42,7 @@ fi
 if command -v jq >/dev/null 2>&1; then
   ok "jq ($(jq --version))"
 else
-  fail "jq not found. Install it with your OS package manager."
+  fail "jq not found. Install jq with the host operating system's package manager."
   errors=$((errors + 1))
 fi
 
@@ -44,7 +50,7 @@ fi
 if command -v curl >/dev/null 2>&1; then
   ok "curl ($(curl --version | head -n1 | awk '{print $2}'))"
 else
-  fail "curl not found. Install it with your OS package manager."
+  fail "curl not found. Install curl with the host operating system's package manager."
   errors=$((errors + 1))
 fi
 
@@ -84,7 +90,7 @@ if [[ -n "${POSTHOG_PROJECT_ID:-}" ]]; then
   ok "POSTHOG_PROJECT_ID is set ($POSTHOG_PROJECT_ID)"
 else
   warn "POSTHOG_PROJECT_ID not set. Project-scoped scripts will need an explicit project_id arg."
-  warn "  Find IDs after auth: scripts/posthog-projects.sh ls"
+  warn "  Find IDs after auth: bash \"$SCRIPT_DIR/posthog-projects.sh\" ls"
 fi
 
 # 8. Live auth call - confirms the key works AND prints user/org/project context

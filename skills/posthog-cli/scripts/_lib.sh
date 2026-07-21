@@ -6,10 +6,14 @@ set -euo pipefail
 err() { printf '\033[31mERROR\033[0m: %s\n' "$1" >&2; exit 1; }
 warn() { printf '\033[33m!\033[0m %s\n' "$1" >&2; }
 
-# Default to US Cloud. Override with POSTHOG_HOST=https://eu.posthog.com or self-hosted URL.
-POSTHOG_HOST="${POSTHOG_HOST:-https://us.posthog.com}"
-# Trim trailing slash if present.
+_POSTHOG_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Match the official CLI variable names while preserving the legacy helper names.
+POSTHOG_PERSONAL_API_KEY="${POSTHOG_PERSONAL_API_KEY:-${POSTHOG_CLI_API_KEY:-${POSTHOG_API_KEY:-}}}"
+POSTHOG_PROJECT_ID="${POSTHOG_PROJECT_ID:-${POSTHOG_CLI_PROJECT_ID:-}}"
+POSTHOG_HOST="${POSTHOG_HOST:-${POSTHOG_CLI_HOST:-https://us.posthog.com}}"
 POSTHOG_HOST="${POSTHOG_HOST%/}"
+export POSTHOG_PERSONAL_API_KEY POSTHOG_PROJECT_ID POSTHOG_HOST
 
 # Auto-load POSTHOG_PERSONAL_API_KEY (and POSTHOG_PROJECT_ID, POSTHOG_HOST) from a project
 # .env file if not already set in the shell. Walks up from $PWD looking for .env.local then
@@ -71,6 +75,18 @@ _posthog_load_env() {
 # Try to load from .env first; this is a no-op if POSTHOG_PERSONAL_API_KEY is already exported.
 _posthog_load_env
 
+POSTHOG_HOST="${POSTHOG_HOST%/}"
+[[ "$POSTHOG_HOST" =~ ^https?://[^/@?#]+$ ]] || err \
+  "POSTHOG_HOST must be an HTTP(S) origin without a path, query, or fragment."
+
+if [[ "$POSTHOG_HOST" == http://* ]] \
+  && [[ ! "$POSTHOG_HOST" =~ ^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?$ ]] \
+  && [[ "${POSTHOG_ALLOW_INSECURE_HTTP:-}" != "1" ]]; then
+  err "Refusing to send a personal API key over plain HTTP. Use HTTPS or set POSTHOG_ALLOW_INSECURE_HTTP=1 for an explicitly trusted self-hosted instance."
+fi
+
+export POSTHOG_HOST
+
 # Require POSTHOG_PERSONAL_API_KEY in the environment (or loadable from a project .env file).
 require_posthog_key() {
   [[ -n "${POSTHOG_PERSONAL_API_KEY:-}" ]] || err \
@@ -103,7 +119,7 @@ resolve_project_id() {
     printf '%s' "$POSTHOG_PROJECT_ID"
     return 0
   fi
-  err "POSTHOG_PROJECT_ID not set. Resolution order: explicit arg > env var. Find IDs with: scripts/posthog-projects.sh ls"
+  err "POSTHOG_PROJECT_ID not set. Resolution order: explicit arg > env var. Find IDs with: bash \"$_POSTHOG_SCRIPT_DIR/posthog-projects.sh\" ls"
 }
 
 # URL-encode a single value for query strings. Usage: urlencode "user@example.com"
@@ -132,6 +148,11 @@ posthog_api() {
   local method="${1:-GET}" path="${2:?path required}"
   shift 2
 
+  if [[ "$path" == http://* || "$path" == https://* ]]; then
+    [[ "$path" == "$POSTHOG_HOST"/* ]] || err \
+      "Refusing to send PostHog credentials to a different origin: $path"
+    path="${path#"$POSTHOG_HOST"}"
+  fi
   [[ "$path" == /* ]] || path="/$path"
 
   local args=(
@@ -154,7 +175,8 @@ posthog_api() {
 
   local url="${POSTHOG_HOST}${path}"
   local attempt=1 max_attempts=3 response status body retry_after
-  local headers_file="/tmp/posthog-cli-headers.$$"
+  local headers_file
+  headers_file=$(mktemp "${TMPDIR:-/tmp}/posthog-cli-headers.XXXXXX")
 
   while [[ $attempt -le $max_attempts ]]; do
     response=$(curl "${args[@]}" -D "$headers_file" "$url" 2>&1) || {
@@ -198,11 +220,11 @@ posthog_paginate() {
     if [[ -z "$next" || "$next" == "null" ]]; then
       return 0
     fi
-    # .next is an absolute URL - strip the host so posthog_api re-prefixes it.
+    # Absolute pagination URLs must stay on the authenticated PostHog origin.
     if [[ "$next" == http* ]]; then
+      [[ "$next" == "$POSTHOG_HOST"/* ]] || err \
+        "Refusing cross-origin pagination URL: $next"
       path="${next#"$POSTHOG_HOST"}"
-      # If the response next URL points to a different host, follow it directly.
-      [[ "$path" == "$next" ]] && path="$next"
     else
       path="$next"
     fi

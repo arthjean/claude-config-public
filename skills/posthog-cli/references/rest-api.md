@@ -1,6 +1,12 @@
-# PostHog REST API - direct curl reference
+# PostHog REST API: helper fallback reference
 
-This document is the authoritative endpoint catalog used by the helper scripts. When something isn't covered by a helper, hit the path directly via `scripts/posthog-api.sh`.
+This is the endpoint snapshot used by the bundled helpers. It is not a permanent API contract. Prefer the official agent API, and verify any raw path, method, scope, and body against current PostHog documentation before executing it.
+
+Keep the user's project as the working directory and set:
+
+```bash
+POSTHOG_SKILL_DIR=~/.claude/skills/posthog-cli
+```
 
 ## Auth
 
@@ -10,7 +16,7 @@ Accept: application/json
 Content-Type: application/json    # only for POST/PATCH
 ```
 
-Personal API keys start with `phx_`. Project keys (`phc_*`) are public ingestion-only and **cannot** read management endpoints. Create at PostHog UI → Settings → Personal API Keys (max 10 per user, scoped per resource).
+Personal API keys normally start with `phx_`. Project keys (`phc_*`) are public ingestion-only and cannot read management endpoints. Use the narrowest personal-key scopes that cover the requested operation.
 
 ## Base URLs
 
@@ -19,8 +25,6 @@ Personal API keys start with `phx_`. Project keys (`phc_*`) are public ingestion
 | US Cloud (default) | `https://us.posthog.com` |
 | EU Cloud | `https://eu.posthog.com` |
 | Self-hosted | `https://your-instance.example.com` |
-
-The legacy `https://app.posthog.com` still resolves but `us.posthog.com` is canonical.
 
 ## Generic curl pattern
 
@@ -36,16 +40,16 @@ curl -fsS \
 
 ## Pagination
 
-All list endpoints return:
+Many list endpoints return:
 ```json
 { "count": 1234, "next": "https://...?cursor=abc", "previous": null, "results": [...] }
 ```
-Default page size varies (10–100). Override with `?limit=N&offset=N` or `?cursor=...`. Always follow the `next` URL directly.
+Pagination style and default page size vary by endpoint. Follow `next` only when it stays on the authenticated PostHog origin. The helper refuses to forward credentials to a different origin.
 
 ```bash
 url="$POSTHOG_HOST/api/projects/$PID/feature_flags/?limit=100"
 while [[ -n "$url" && "$url" != "null" ]]; do
-  resp=$(scripts/posthog-api.sh GET "${url#"$POSTHOG_HOST"}")
+  resp=$(bash "$POSTHOG_SKILL_DIR/scripts/posthog-api.sh" GET "${url#"$POSTHOG_HOST"}")
   printf '%s\n' "$resp" | jq '.results[]'
   url=$(printf '%s\n' "$resp" | jq -r '.next')
 done
@@ -53,15 +57,7 @@ done
 
 ## Rate limits
 
-Per-team (all users in one org share the bucket). 429 returns `Retry-After: <seconds>`.
-
-| Endpoint category | Limit |
-|---|---|
-| Analytics / list endpoints | 240/min, 1,200/hour |
-| Standard CRUD | 480/min, 4,800/hour |
-| `/query/` (HogQL) | 2,400/hour |
-| `events/values` | 60/min, 300/hour |
-| Feature flag local evaluation | 600/min |
+Limits differ by endpoint and can change. On HTTP 429, honor `Retry-After` when present. Use the official CLI's rate-limit controls for agent API calls, pace bulk helper workflows explicitly, and verify current limits before capacity planning.
 
 ## Error format
 
@@ -86,7 +82,7 @@ Per-team (all users in one org share the bucket). 429 returns `Retry-After: <sec
 
 ## Endpoint catalog (project-scoped unless noted)
 
-All paths below assume the prefix `/api/projects/{project_id}/` unless explicitly `/api/organizations/{org_id}/` or `/api/users/`. The new `/api/environments/{env_id}/` prefix is the future, but `/api/projects/{id}/` still works and is what this skill uses.
+The helpers below currently use `/api/projects/{project_id}/` unless a path is explicitly organization- or user-scoped. Do not assume `/api/projects/` and `/api/environments/` are interchangeable for a new endpoint.
 
 ### Account
 
@@ -410,4 +406,4 @@ Issue PATCH accepts `{"status":"resolved|active|suppressed", "assignee":{"type":
 
 ## Notes on the `/api/environments/` migration
 
-PostHog announced multi-environment-per-project in early 2026. Some data-scoped endpoints (events, queries, recordings, persons) document a `/api/environments/{env_id}/...` prefix as the new canonical form. The `{env_id}` is the environment's own ID, not the project ID. As of writing, both prefixes work for every endpoint above. This skill stays on `/api/projects/{id}/` for stability - when PostHog announces a hard deadline, swap the prefix in `_lib.sh::posthog_api` paths or expose a `POSTHOG_USE_ENVIRONMENTS=1` flag.
+Some data-scoped APIs use `/api/environments/{environment_id}/`, while many management resources remain under `/api/projects/{project_id}/`. An environment ID is not automatically interchangeable with a project ID. Verify the exact current route before adding or changing a helper; never perform a global prefix replacement.

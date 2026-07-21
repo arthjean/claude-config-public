@@ -8,7 +8,7 @@
 #   ./clerk-users.sh count
 #   ./clerk-users.sh get      <user_id>
 #   ./clerk-users.sh find     <email-or-phone-substring>
-#   ./clerk-users.sh create   <email> <password> [first_name] [last_name]
+#   ./clerk-users.sh create   <email> <password-source> [first_name] [last_name]
 #   ./clerk-users.sh update   <user_id> <patch-json>
 #   ./clerk-users.sh metadata <user_id> {public|private|unsafe} <merge-json>
 #   ./clerk-users.sh ban      <user_id>
@@ -48,8 +48,8 @@ case "$action" in
     ;;
 
   create)
-    [[ $# -ge 2 ]] || err "usage: $0 create <email> <password> [first_name] [last_name]"
-    email="$1"; password="$2"; first="${3:-}"; last="${4:-}"
+    [[ $# -ge 2 ]] || err "usage: $0 create <email> <@env:VARIABLE|-> [first_name] [last_name]"
+    email="$1"; password=$(read_secret_arg "$2" "password"); first="${3:-}"; last="${4:-}"
     body=$(jq -nc \
       --arg email "$email" \
       --arg password "$password" \
@@ -73,11 +73,9 @@ case "$action" in
       public|private|unsafe) ;;
       *) err "metadata kind must be: public | private | unsafe" ;;
     esac
-    # Read current value, deep-merge patch, write back. Avoids clobbering other keys.
-    current=$(clerk_api GET "/users/$uid" | jq ".${kind}_metadata // {}")
-    merged=$(echo "$current" | jq --argjson p "$patch" '. + $p')
-    body=$(jq -nc --argjson m "$merged" --arg k "${kind}_metadata" '{($k): $m}')
-    clerk_api PATCH "/users/$uid" "$body" | jq .
+    # API version 2026-05-12 provides an atomic deep-merge endpoint.
+    body=$(jq -nc --argjson m "$patch" --arg k "${kind}_metadata" '{($k): $m}')
+    clerk_api PATCH "/users/$uid/metadata" "$body" | jq .
     ;;
 
   ban)

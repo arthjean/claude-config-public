@@ -14,7 +14,7 @@ errors=0
 if command -v bun >/dev/null 2>&1; then
   ok "bun ($(bun --version))"
 else
-  fail "bun not found. Install: curl -fsSL https://bun.sh/install | bash"
+  fail "bun not found. Install Bun using the method appropriate for this host."
   errors=$((errors + 1))
 fi
 
@@ -31,8 +31,8 @@ fi
 # 3. jq (required by helper scripts for JSON parsing)
 if command -v jq >/dev/null 2>&1; then
   ok "jq ($(jq --version))"
-else
-  fail "jq not found. Install it with your OS package manager."
+  else
+    fail "jq not found. Install jq with this host's package manager."
   errors=$((errors + 1))
 fi
 
@@ -40,7 +40,7 @@ fi
 if command -v curl >/dev/null 2>&1; then
   ok "curl ($(curl --version | head -n1 | awk '{print $2}'))"
 else
-  fail "curl not found. Install it with your OS package manager."
+  fail "curl not found. Install curl with this host's package manager."
   errors=$((errors + 1))
 fi
 
@@ -49,7 +49,7 @@ if [[ -n "${VERCEL_TOKEN:-}" ]]; then
   ok "VERCEL_TOKEN is set (${#VERCEL_TOKEN} chars)"
 else
   fail "VERCEL_TOKEN is not set. Generate at https://vercel.com/account/tokens and:"
-  fail "  export VERCEL_TOKEN=vcp_<redacted>"
+  fail "  export VERCEL_TOKEN=vcp_xxxxxxxxxxxxxxxxxxxxxxxx"
   errors=$((errors + 1))
 fi
 
@@ -73,13 +73,14 @@ elif [[ -f .vercel/project.json ]]; then
   fi
 else
   warn "no project pinned. Pin one with:"
-  warn "  bunx vercel@latest link --token \$VERCEL_TOKEN --yes"
+  warn "  bunx vercel@latest link --yes"
   warn "  (or pass --project on every command, or set VERCEL_PROJECT_ID env var)"
 fi
 
 # 8. Verify auth actually works (1 cheap API call)
 if [[ -n "${VERCEL_TOKEN:-}" ]] && command -v curl >/dev/null 2>&1; then
-  if me=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" https://api.vercel.com/v2/user 2>/dev/null); then
+  auth_config=$(printf 'header = "Authorization: Bearer %s"\n' "$VERCEL_TOKEN")
+  if me=$(curl -fsS --config /dev/fd/3 https://api.vercel.com/v2/user 3<<<"$auth_config" 2>/dev/null); then
     username=$(echo "$me" | jq -r '.user.username // .user.email // "unknown"')
     ok "authenticated as: $username"
   else

@@ -5,13 +5,13 @@
 # Subcommands:
 #   create   Create a webhook
 #              Flags: --url <https://...> --events <evt,evt,...>   (comma-separated event types)
-#                     [--name <internal>] [--enabled true|false]
+#                     [--name <internal>] [--enabled true|false] --out <secure-json-path>
 #   ls       List webhooks
 #   get      Get a single webhook                  get <id>
 #   update   Update a webhook                      update <id> [--url ...] [--events ...] [--enabled true|false]
 #   rm       Delete a webhook                      rm <id>
 #
-#   listen   Run the official CLI tunnel locally (delegates to `bunx resend-cli webhooks listen`).
+#   listen   Run the official CLI tunnel locally (delegates to `bunx --bun resend-cli@latest`).
 #            Use when you want to test webhook delivery to localhost without ngrok.
 #            Usage: resend-webhooks.sh listen [--port 3000]
 #
@@ -38,23 +38,31 @@ _bool() { case "${1:-}" in true|1|yes|on) echo true ;; false|0|no|off) echo fals
 case "$action" in
   create)
     require_resend_key
-    url=""; events=""; name=""; enabled=""
+    url=""; events=""; name=""; enabled=""; out=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --url)     url="$2"; shift 2 ;;
         --events)  events="$2"; shift 2 ;;
         --name)    name="$2"; shift 2 ;;
         --enabled) enabled=$(_bool "$2"); shift 2 ;;
+        --out)     out="$2"; shift 2 ;;
         *) err "unknown flag: $1" ;;
       esac
     done
     [[ -n "$url" ]] || err "missing --url"
     [[ -n "$events" ]] || err "missing --events <evt,evt,...>"
+    [[ -n "$out" ]] || err "missing --out <secure-json-path>; webhook creation can return a one-time signing secret"
+    [[ ! -e "$out" ]] || err "refusing to overwrite existing path: $out"
     evts_arr=$(_csv_to_json_array "$events")
     body=$(jq -nc --arg u "$url" --argjson e "$evts_arr" '{endpoint:$u, events:$e}')
     [[ -n "$name" ]]    && body=$(printf '%s' "$body" | jq -c --arg v "$name" '. + {name: $v}')
     [[ -n "$enabled" ]] && body=$(printf '%s' "$body" | jq -c --argjson v "$enabled" '. + {enabled: $v}')
-    resend_api POST "/webhooks" "$body" | pretty
+    response=$(resend_api POST "/webhooks" "$body")
+    old_umask=$(umask)
+    umask 077
+    printf '%s\n' "$response" > "$out"
+    umask "$old_umask"
+    printf '%s' "$response" | jq --arg saved_to "$out" 'del(.signing_secret, .secret) + {secret_response_saved_to: $saved_to}'
     ;;
 
   ls|list)
@@ -93,10 +101,10 @@ case "$action" in
     ;;
 
   listen)
-    # Delegate to the official CLI - bash cannot expose a tunnel.
+    # Delegate to the official CLI because the REST API cannot expose a local tunnel.
     command -v bun >/dev/null 2>&1 || err "listen requires bun + bunx resend-cli"
     require_resend_key
-    exec env RESEND_API_KEY="$RESEND_API_KEY" bunx --bun resend-cli webhooks listen "$@"
+    exec bunx --bun resend-cli@latest webhooks listen "$@"
     ;;
 
   *) err "unknown action: $action  (try: create|ls|get|update|rm|listen)" ;;

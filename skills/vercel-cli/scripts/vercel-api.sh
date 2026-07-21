@@ -3,10 +3,11 @@
 # Replaces direct curl invocations and any MCP tool that maps to a single REST call.
 #
 # Usage:
-#   ./vercel-api.sh <METHOD> <PATH> [json_body]
+#   ./vercel-api.sh <METHOD> <PATH> [json_body | @json_file | -]
 #   ./vercel-api.sh GET  "/v2/user"
 #   ./vercel-api.sh GET  "/v9/projects?limit=20"   # query strings are passed through
-#   ./vercel-api.sh POST "/v1/webhooks" '{"url":"https://hooks.example.com","events":["deployment.succeeded"]}'
+#   ./vercel-api.sh POST "/v1/webhooks" @webhook.json
+#   printf '%s' "$JSON_BODY" | ./vercel-api.sh POST "/v1/webhooks" -
 #   ./vercel-api.sh DELETE "/v1/webhooks/wh_xxx"
 #
 # Auto-injects: Authorization: Bearer $VERCEL_TOKEN, Accept: application/json,
@@ -20,7 +21,20 @@ require_vercel_token
 
 method="$1"
 path="$2"
-body="${3:-}"
+body_arg="${3:-}"
+case "$body_arg" in
+  @*)
+    body_file="${body_arg#@}"
+    [[ -f "$body_file" ]] || err "JSON body file not found: $body_file"
+    body=$(<"$body_file")
+    ;;
+  -)
+    body=$(</dev/stdin)
+    ;;
+  *)
+    body="$body_arg"
+    ;;
+esac
 
 # Auto-add ?teamId= unless the path already has one and a team is resolvable.
 if [[ "$path" != *"teamId="* && "$path" != "/v2/user"* && "$path" != "/v2/teams"* ]]; then

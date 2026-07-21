@@ -1,159 +1,154 @@
 ---
-model: opus
 name: neon-cli
-description: "Manage a Neon Postgres database from bash via the official neonctl CLI + psql, replacing the Neon MCP server. Covers projects, branches, databases, roles, connection strings, SQL execution (single/transaction/file), schema diffs, migrations, EXPLAIN, slow queries, and all 26 MCP tool equivalents. Use when the user asks to query/inspect/modify a Neon database, create/restore/diff branches, run migrations, get connection strings, manage roles or projects, or says 'neon-cli', 'neonctl', 'query my Neon DB', 'create a Neon branch', 'list my Neon projects'. Do NOT use when the user wants to write application code that connects to Neon at runtime (use the Drizzle/serverless driver skills instead) or to manage Neon MCP server itself."
-argument-hint: "[command or natural-language request]"
+description: "Operate Neon Postgres from a coding-agent terminal with the official neonctl CLI and psql, without relying on the Neon MCP server. Covers projects, local project linking, branches, databases, roles, connection strings, SQL execution, transactions, schema diffs, migrations, EXPLAIN, slow-query inspection, and Management API gaps. Use when the agent needs to inspect, query, or modify a Neon database; create, restore, reset, diff, or delete branches; run migrations; manage Neon projects or roles; or when the user says neon-cli, neonctl, query my Neon DB, create a Neon branch, or list my Neon projects. Do not use for application runtime integration with Neon, ORM schema design, continuous monitoring, or Neon MCP server configuration."
 ---
 
-# neon-cli - Neon Postgres via bash, no MCP
+# Neon CLI
 
-Replace the Neon MCP server with the official `neonctl` CLI + `psql` + a few bash helpers for parity gaps. Everything runs in your shell with `NEON_API_KEY`.
+Operate Neon through `bunx neonctl@latest`, `psql`, and the bundled shell helpers. Keep the working directory in the user's project so `neonctl` can resolve the nearest local `.neon` context.
 
-## Why this exists
+## Operating contract
 
-The Neon MCP server exposes 26 tools. `neonctl` covers ~20 of them natively. The remaining 6 (`run_sql`, `run_sql_transaction`, `describe_table_schema`, `list_slow_queries`, `explain_sql_statement`, the migration pair) need bash wrappers that combine `neonctl connection-string` + `psql` (or direct calls to `https://console.neon.tech/api/v2`). That's what `scripts/` contains.
+1. Use the absolute directory containing this `SKILL.md` as `NEON_SKILL_DIR`. For example:
 
-Latency is lower than MCP (no JSON-RPC roundtrip), the surface is git-greppable, and there's no separate process to manage.
-
-## Hard prerequisites
-
-Before any command in this skill works, verify:
-
-1. **`bunx`** - comes with bun. The user's global rule mandates bun, never npm/npx.
-2. **`psql`** - install the PostgreSQL client with your OS package manager (client only, no daemon). Required for the SQL-execution helpers.
-3. **`NEON_API_KEY`** - generate at https://console.neon.tech/app/settings?modal=create_api_key. Project-scoped if managing one project, personal if managing many. Export in shell:
    ```bash
-   export NEON_API_KEY=neon_api_xxxxxxxxxxxx
+   NEON_SKILL_DIR=~/.claude/skills/neon-cli
    ```
-4. **`jq`** - used by helper scripts for JSON parsing. `sudo dnf install jq` if missing.
 
-Run `scripts/neon-ensure.sh` to verify all four at once.
+2. Do not `cd` into the skill directory before running Neon commands. The current project directory determines which `.neon` context is active.
+3. Use `bunx neonctl@latest`. Do not install `neonctl` globally and do not use npm, npx, pnpm, or yarn.
+4. Prefer native `neonctl` commands. Use bundled scripts only for SQL workflows that need `psql`.
+5. Preserve secrets. Never print, log, commit, or return `NEON_API_KEY`, database passwords, connection strings, or generated `.env` values.
+6. Keep browser use opt-in. Do not run interactive `neonctl auth` unless the user explicitly requested browser authentication.
+7. Require an explicit destructive intent and an unambiguous target before project deletion, branch deletion, reset, restore, `DROP`, or destructive DML. Do not infer these actions from a general request to manage or fix a database.
 
-## Invocation pattern (always use this)
+## Preflight
 
-```bash
-bunx neonctl@latest <command> [args] --output json
-```
-
-Never `npm install -g neonctl`. Never `neonctl` (assumes global install - fragile). `bunx neonctl@latest` always pins to the latest published version and respects the user's bun-only rule.
-
-For repeated use in a single shell session, alias it:
-```bash
-alias n='bunx neonctl@latest'
-```
-
-## Project context - set it once, forget it
-
-Most commands need `--project-id`. Pin it once with `set-context` to avoid passing it every time:
+Run the bundled preflight only when the task actually needs Neon access:
 
 ```bash
-bunx neonctl@latest set-context \
-  --project-id polished-wind-123456 \
-  --org-id org-acme-123
+bash "$NEON_SKILL_DIR/scripts/neon-ensure.sh"
 ```
 
-Per-repo context (useful when a repo is tied to one Neon project):
-```bash
-bunx neonctl@latest set-context \
-  --project-id polished-wind-123456 \
-  --context-file .neon/context.json
-```
+It checks `bun`, current `neonctl`, `psql`, `jq`, `NEON_API_KEY`, local context, and authentication. It performs one read-only authentication request.
 
-Then on every subsequent command, pass `--context-file .neon/context.json` (or omit if you used the global location).
-
-## Quick map - "I want to..." → command
-
-| Intent | Command |
-|---|---|
-| List my projects | `bunx neonctl@latest projects list --output json` |
-| Get connection string for main | `bunx neonctl@latest cs main --project-id $PID` |
-| Open a psql shell | `bunx neonctl@latest cs main --project-id $PID --psql` |
-| Run a single SELECT | `scripts/neon-sql.sh main "SELECT count(*) FROM users"` |
-| Run a transaction | `scripts/neon-tx.sh main < migration.sql` |
-| List tables | `scripts/neon-tables.sh main` |
-| Describe a table | `scripts/neon-describe.sh main users` |
-| Explain a query | `scripts/neon-explain.sh main "SELECT * FROM users WHERE email = 'x'"` |
-| Find slow queries | `scripts/neon-slow-queries.sh main` |
-| Create a dev branch | `bunx neonctl@latest branches create --name dev/$(date +%s) --parent main --project-id $PID` |
-| Diff schema between branches | `bunx neonctl@latest branches schema-diff main feature/x --project-id $PID --database neondb` |
-| Reset a branch to parent HEAD | `bunx neonctl@latest branches reset feature/x --parent --project-id $PID` |
-| List branches as JSON | `bunx neonctl@latest branches list --project-id $PID --output json` |
-
-For the full command surface, see [references/commands.md](references/commands.md).
-
-## SQL execution - the canonical pattern
-
-`neonctl` has **no `query` subcommand**. SQL goes through `psql` over a connection string from `neonctl cs`:
+If inspecting CLI help, remove the API key from that subprocess because some `neonctl` versions render environment-backed defaults in help output:
 
 ```bash
-psql "$(bunx neonctl@latest cs main --project-id $PID --no-color)" \
-  -c "SELECT count(*) FROM users;"
+env -u NEON_API_KEY bunx neonctl@latest branches create --help
 ```
 
-The helpers in `scripts/` wrap this so you don't repeat the pattern. Multi-statement transactions, JSON output capture, and DDL guards are documented in [references/sql-execution.md](references/sql-execution.md).
+Do not run install commands automatically. Detect the host OS first, then tell the user which missing client package is required.
 
-**Pooled vs direct (matters):**
-- DDL (`CREATE`, `ALTER`, `DROP`), `COPY`, `LISTEN/NOTIFY`, prepared statements → **direct** (no `--pooled`)
-- App reads/writes, high-concurrency → **pooled** (`--pooled`)
+## Authentication and project targeting
 
-PgBouncer in transaction mode breaks DDL and prepared statements. Migrations always use direct.
+Use a scoped API key through the environment:
 
-## Migration workflow (replaces MCP `prepare_database_migration` + `complete_database_migration`)
+```bash
+export NEON_API_KEY=neon_api_xxxxxxxxxxxx
+```
 
-The MCP wraps this in two tool calls. In bash you orchestrate explicitly - which is actually clearer:
+For a one-off operation, pass the project explicitly:
 
 ```bash
 PID=polished-wind-123456
-TS=$(date +%Y%m%d-%H%M%S)
-BRANCH="migration/$TS"
-
-# 1. Create a schema-only branch from main (zero data copy, instant)
-bunx neonctl@latest branches create \
-  --name "$BRANCH" --parent main --schema-only \
-  --project-id "$PID" --output json
-
-# 2. Apply the migration on the branch
-psql "$(bunx neonctl@latest cs "$BRANCH" --project-id "$PID" --no-color)" \
-  -f migration.sql
-
-# 3. Review the diff against main
-bunx neonctl@latest branches schema-diff main "$BRANCH" \
-  --project-id "$PID" --database neondb
-
-# 4. If diff looks right, apply on main
-psql "$(bunx neonctl@latest cs main --project-id "$PID" --no-color)" \
-  -f migration.sql
-
-# 5. Cleanup
-bunx neonctl@latest branches delete "$BRANCH" --project-id "$PID"
+bunx neonctl@latest branches list --project-id "$PID" --output json
 ```
 
-For complex migrations, keep the branch around for a day in case you need to inspect the pre-migration state via point-in-time restore.
+For repeated repository work, link the project non-interactively. `link` and `checkout` pull environment variables into `.env` by default, so disable that unless the user explicitly wants it:
 
-## Guardrails (don't skip)
+```bash
+bunx neonctl@latest link \
+  --project-id "$PID" \
+  --branch main \
+  --agent \
+  --no-env-pull
 
-These prevent the most common destructive accidents:
+bunx neonctl@latest checkout feature/users --no-env-pull
+```
 
-1. **Never delete the default branch.** Always check first:
-   ```bash
-   bunx neonctl@latest branches list --project-id $PID --output json \
-     | jq -e ".[] | select(.name==\"$BRANCH_TO_DELETE\") | .default | not" >/dev/null \
-     || { echo "REFUSED: $BRANCH_TO_DELETE is the default branch" >&2; exit 1; }
-   ```
-2. **Never run DDL on a pooled connection.** Migrations always use the direct connection string (no `--pooled`).
-3. **Never embed `NEON_API_KEY` in a script committed to git.** Always read from env. The helpers in `scripts/` enforce this.
-4. **Watch branch count vs plan limit.** Free/Launch = 10, Scale = 25. Each extra branch is ~$1.50/month. Run `bunx neonctl@latest branches list --project-id $PID --output json | jq 'length'` before bulk-creating dev branches.
-5. **Reset is destructive.** `branches reset --parent` overwrites the branch's data with the parent's. Use `--preserve-under-name backup-$(date +%s)` if you might need the pre-reset state.
+`set-context` is deprecated. Use `link` and `checkout`. Do not create a `.neon` file merely to execute one command when `--project-id` is sufficient.
 
-## When to reach for the references
+Bundled scripts resolve the project in this order:
 
-- **[references/commands.md](references/commands.md)** - Full neonctl v2.22.0 command reference. Read this when you need a flag you don't remember.
-- **[references/sql-execution.md](references/sql-execution.md)** - psql patterns: heredocs, JSON capture, file execution, transactional groups, `\copy`, `\d` introspection.
-- **[references/mcp-parity.md](references/mcp-parity.md)** - Mapping table: every MCP tool ↔ its CLI/script equivalent. Read this when porting a workflow that previously used MCP.
-- **[references/management-api.md](references/management-api.md)** - Direct `curl` against `https://console.neon.tech/api/v2`. Used for parity gaps that have no neonctl command (slow queries, SQL-over-HTTP, restore-from-LSN, endpoint mgmt).
+1. Explicit script argument
+2. `NEON_PROJECT_ID`
+3. The nearest `.neon` file resolved by `neonctl`
 
-## When NOT to use this skill
+## Execution workflow
 
-- Writing application code that connects to Neon at runtime → use the Drizzle ORM or `@neondatabase/serverless` driver, not bash. This skill is for ops/admin tasks done by an agent in a shell.
-- Continuous monitoring or alerting → use Neon's native alerting + observability, not bash polling.
-- Schema generation from scratch → use Drizzle's introspection or a dedicated schema modeller, not raw psql.
+1. Identify the project, branch, database, role, and whether the request is read-only or mutating.
+2. Resolve missing targets with read-only commands such as `projects list`, `branches list`, or `databases list`.
+3. Use a native command from [references/commands.md](references/commands.md), or a bundled SQL helper from [references/sql-execution.md](references/sql-execution.md).
+4. Before a destructive action, inspect the exact target. For branch deletion, verify it is not the default branch. For reset or restore, preserve the previous state under a backup name when rollback may matter.
+5. Execute the narrowest command that satisfies the request.
+6. Report the affected project, branch, and operation outcome. Scrub secrets and connection strings from all output.
+
+## Quick map
+
+| Intent | Command |
+|---|---|
+| List projects | `bunx neonctl@latest projects list --output json` |
+| List branches | `bunx neonctl@latest branches list --project-id "$PID" --output json` |
+| Get a direct connection string | `bunx neonctl@latest cs main --project-id "$PID" --no-color` |
+| Open psql | `bunx neonctl@latest psql main --project-id "$PID"` |
+| Run one SQL statement | `bash "$NEON_SKILL_DIR/scripts/neon-sql.sh" main "SELECT count(*) FROM users" pooled "$PID"` |
+| Run a transaction file | `bash "$NEON_SKILL_DIR/scripts/neon-tx.sh" main -f migration.sql direct "$PID"` |
+| List tables | `bash "$NEON_SKILL_DIR/scripts/neon-tables.sh" main neondb "$PID"` |
+| Describe a table | `bash "$NEON_SKILL_DIR/scripts/neon-describe.sh" main users public neondb "$PID"` |
+| Explain a read query | `bash "$NEON_SKILL_DIR/scripts/neon-explain.sh" main "SELECT * FROM users" "$PID"` |
+| Inspect slow queries | `bash "$NEON_SKILL_DIR/scripts/neon-slow-queries.sh" main 20 neondb "$PID"` |
+| Create a branch | `bunx neonctl@latest branches create --name feature/users --parent main --project-id "$PID" --output json` |
+| Diff schemas | `bunx neonctl@latest branches schema-diff main feature/users --project-id "$PID" --database neondb` |
+| Call an API route | `bunx neonctl@latest api "/projects/$PID/operations" --output json` |
+
+## Connection choice
+
+Use a direct connection for DDL, migrations, `COPY`, `LISTEN/NOTIFY`, prepared statements, and session-scoped settings. Use a pooled connection for ordinary application-style reads and single-statement writes.
+
+The SQL helpers choose these defaults:
+
+| Helper | Default |
+|---|---|
+| `neon-sql.sh` | pooled |
+| `neon-tx.sh` | direct |
+| `neon-tables.sh` | pooled |
+| `neon-describe.sh` | pooled |
+| `neon-explain.sh` | direct |
+| `neon-slow-queries.sh` | pooled |
+
+`EXPLAIN ANALYZE` executes the statement. Use `neon-explain.sh --safe` for mutating SQL so the helper wraps it in `BEGIN` and `ROLLBACK`, but still inspect untrusted SQL for functions or external side effects before execution.
+
+## Migration workflow
+
+Use a temporary branch to preview non-trivial migrations:
+
+```bash
+PID=polished-wind-123456
+BRANCH="migration/$(date +%Y%m%d-%H%M%S)"
+
+bunx neonctl@latest branches create \
+  --name "$BRANCH" \
+  --parent main \
+  --schema-only \
+  --project-id "$PID" \
+  --output json
+
+bash "$NEON_SKILL_DIR/scripts/neon-tx.sh" \
+  "$BRANCH" -f migration.sql direct "$PID"
+
+bunx neonctl@latest branches schema-diff main "$BRANCH" \
+  --project-id "$PID" \
+  --database neondb
+```
+
+Apply the reviewed migration to the target branch only when the user's request includes that mutation. Keep or delete the preview branch according to the requested rollback window.
+
+## References
+
+- Read [references/commands.md](references/commands.md) for the current command families and safe examples.
+- Read [references/sql-execution.md](references/sql-execution.md) for `psql`, transactions, JSON capture, `EXPLAIN`, and connection-mode details.
+- Read [references/management-api.md](references/management-api.md) when `neonctl api` is needed for a CLI parity gap.
+- Read [references/mcp-parity.md](references/mcp-parity.md) only when translating a Neon MCP workflow to CLI commands.
+
+For flags not covered here, inspect current help with `env -u NEON_API_KEY bunx neonctl@latest <command> --help`. For version-sensitive Neon behavior, use Context7 or official Neon documentation rather than relying on this reference indefinitely.

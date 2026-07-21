@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vercel-webhooks.sh - webhook CRUD via REST API.
-# REST-only - webhooks live under /v1/webhooks.
+# Use when explicit project ID filtering or stable raw responses are required.
 #
 # Usage:
 #   ./vercel-webhooks.sh list

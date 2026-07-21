@@ -53,13 +53,11 @@ case "$mode" in
 
     if [[ $follow -eq 1 ]]; then
       bunx vercel@latest logs "$target" \
-        --token "$VERCEL_TOKEN" \
         --follow \
         "${scope_args[@]}" \
         "${extra[@]}"
     else
       bunx vercel@latest logs "$target" \
-        --token "$VERCEL_TOKEN" \
         "${scope_args[@]}" \
         "${extra[@]}"
     fi

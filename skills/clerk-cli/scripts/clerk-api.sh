@@ -8,7 +8,7 @@
 #   ./clerk-api.sh GET    "/users?limit=50&offset=0&order_by=-created_at"
 #   ./clerk-api.sh POST   /organizations '{"name":"Acme","created_by":"user_xxx"}'
 #   ./clerk-api.sh PATCH  /users/user_xxx '{"public_metadata":{"plan":"pro"}}'
-#   ./clerk-api.sh DELETE /sessions/sess_xxx
+#   ./clerk-api.sh POST   /sessions/sess_xxx/revoke
 #
 # Output: pretty-printed JSON via jq.
 
@@ -20,4 +20,9 @@ require_clerk_secret_key
 method="$1"; path="$2"
 shift 2
 
-clerk_api "$method" "$path" "$@" | jq . 2>/dev/null || clerk_api "$method" "$path" "$@"
+response=$(clerk_api "$method" "$path" "$@")
+if printf '%s' "$response" | jq empty >/dev/null 2>&1; then
+  printf '%s' "$response" | jq .
+else
+  printf '%s' "$response"
+fi

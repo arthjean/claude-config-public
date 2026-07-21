@@ -1,231 +1,127 @@
 ---
-model: opus
 name: posthog-cli
-description: "Manage every PostHog resource - insights, dashboards, feature flags, experiments, cohorts, persons, events, HogQL queries, error tracking, surveys, notebooks, session recordings, annotations, actions, data warehouse, CDP / Hog functions, LLM analytics (prompts, evaluations, trace reviews), organizations, projects, alerts, subscriptions, scheduled changes - from bash via the PostHog REST API at us.posthog.com / eu.posthog.com / self-hosted, replacing the PostHog MCP server. Covers all ~250 mcp__posthog__* tools the official MCP exposes plus the broader REST surface (~40 resource categories) the MCP doesn't expose. Authenticates with a single POSTHOG_PERSONAL_API_KEY (phx_*) - no OAuth, no separate process. Use when the user asks to list/query/create/update/delete any PostHog resource, run HogQL, manage feature flags or experiments, inspect persons or events, work with error tracking, surveys, recordings, or LLM analytics, switch projects/orgs, or says 'posthog-cli', 'posthog CLI', 'query my PostHog data', 'manage my PostHog flags', 'PostHog API', 'HogQL', 'replace PostHog MCP'. Do NOT use when the user wants to write application code that captures events at runtime (use posthog-js / posthog-node / posthog-python SDKs in code instead) or to manage the PostHog MCP server itself."
-argument-hint: "[command or natural-language request]"
+description: "Operate PostHog from a coding-agent terminal with the official @posthog/cli agent API and bundled REST helpers. Use when the agent needs to inspect, query, create, update, or delete PostHog insights, dashboards, feature flags, experiments, cohorts, persons, events, surveys, recordings, error-tracking issues, warehouse resources, CDP functions, LLM analytics, organizations, or projects; run HogQL or typed analytics queries; upload source maps or debug symbols; translate a PostHog MCP workflow; or when the user says posthog-cli, PostHog CLI, PostHog API, HogQL, query my PostHog data, or manage my PostHog flags. Do not use for application runtime instrumentation through PostHog SDKs, continuous polling, PostHog MCP server configuration, or dashboard-only billing and instance administration."
 ---
 
-# posthog-cli - PostHog via bash, no MCP
+# PostHog CLI
 
-Replace the `posthog/services/mcp` server with direct `curl` calls against the PostHog REST API. Everything runs in your shell with `POSTHOG_PERSONAL_API_KEY`.
+Operate PostHog through the official `@posthog/cli` agent API. Keep the bundled Bash helpers for REST gaps, deterministic pipelines, and HogQL file or tabular workflows.
 
-## Why this exists
+## Operating contract
 
-PostHog's official MCP exposes ~250 tools, but the management surface is far broader (HogQL, Hog functions / CDP, LLM observability, error tracking grouping rules, scheduled changes, advanced activity logs, proxy records, inbox, change requests, approval policies, SDK doctor, web analytics digest, and more). Bash + the REST API gives:
+1. Set the absolute directory containing this `SKILL.md` as `POSTHOG_SKILL_DIR`. For example:
 
-- **Lower latency** - no JSON-RPC roundtrip, no separate MCP process.
-- **Greppable surface** - every endpoint is a line in a shell script in your repo.
-- **Same auth as the MCP** - `POSTHOG_PERSONAL_API_KEY` (`phx_*`) is exactly what the MCP uses.
-- **Wider coverage** - many endpoints are not in the MCP; this skill exposes them as first-class subcommands.
-
-The official `@posthog/cli` is intentionally narrow (sourcemap upload + interactive HogQL + login). It does not replace the MCP. This skill does.
-
-## Hard prerequisites
-
-1. **`bun`** - global rule mandates bun, never npm/npx. Used for the optional `@posthog/cli`.
-2. **`curl`** - install it with your OS package manager if it is not already available. Every API call goes through curl.
-3. **`jq`** - required for JSON shaping. `sudo dnf install jq` if missing.
-4. **`POSTHOG_PERSONAL_API_KEY`** - auto-loaded from the project's `.env.local` (then `.env`) walking up to the git repo root, or pulled from the shell environment if exported. Format `phx_...`. Two ways to provide it:
    ```bash
-   # A) From a project - the same .env.local your app uses for posthog-js/posthog-node
-   cd ~/code/myapp                         # .env.local has POSTHOG_PERSONAL_API_KEY=phx_...
-   scripts/posthog-flags.sh ls             # auto-loaded, no export needed
-
-   # B) Headless / CI / global use - export in the shell
-   export POSTHOG_PERSONAL_API_KEY=phx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   POSTHOG_SKILL_DIR=~/.claude/skills/posthog-cli
    ```
-5. **(Optional) `POSTHOG_HOST`** - defaults to `https://us.posthog.com`. Set to `https://eu.posthog.com` for EU Cloud or your self-hosted URL. Auto-loaded from `.env(.local)` too.
-6. **(Optional) `POSTHOG_PROJECT_ID`** - integer project ID. If not set, every project-scoped script needs it as an explicit positional arg. Discover with `scripts/posthog-projects.sh ls`.
 
-Generate a personal API key at **PostHog UI → Settings → Personal API Keys → "+ Create personal API key"**. Max 10 keys per user. Copy immediately - never shown again. Grant the scopes you need (read/write per resource: `insight:read`, `feature_flag:write`, `query:read`, `cohort:read`, etc.). For full management access, grant all read+write scopes.
+2. Keep the working directory in the user's project. The helpers discover the nearest `.env.local` or `.env` from `$PWD`; changing into the skill directory selects the wrong context.
+3. Use `bunx --bun @posthog/cli@latest`. Do not install the CLI globally and do not use npm, npx, pnpm, or yarn.
+4. Prefer `posthog-cli api` over raw REST. It exposes the current agent-oriented tool catalog, schemas, dry-run validation, and destructive-operation checks.
+5. Keep credentials in the environment. Never print, log, commit, or return a personal API key, locally stored login token, authorization header, or secret-bearing response field.
+6. Keep browser use opt-in. Do not run `login`, open dashboard URLs, or invoke browser authentication unless the user explicitly requested it.
+7. Require explicit intent and an unambiguous organization, project, environment, and resource before any create, update, delete, rollout, experiment transition, cohort membership change, bulk operation, or other mutation. An exact user request is authorization; do not add a redundant confirmation.
+8. Inspect current state before destructive or wide-impact actions. Add `--confirm` only after checking the exact target IDs. Never infer it from a general request to inspect or manage PostHog.
+9. Do not run `api skill install` or `api agents-md install` unless the user explicitly asked to modify agent or repository configuration.
+10. Do not install missing dependencies automatically. Detect the host environment and report the missing executable with an appropriate install command.
 
-Run `scripts/posthog-ensure.sh` to verify prerequisites, including a live call to `GET /api/users/@me/` that prints your default org + project so you know which context the key resolves to.
+## Preflight
 
-## Invocation patterns (always use one of these)
-
-**Generic REST wrapper** - best for ad-hoc reads + writes (returns clean JSON, retries on 429):
-```bash
-scripts/posthog-api.sh GET    /api/projects/
-scripts/posthog-api.sh GET    "/api/projects/$PID/feature_flags/?limit=50"
-scripts/posthog-api.sh POST   /api/projects/$PID/query/ '{"query":{"kind":"HogQLQuery","query":"SELECT count() FROM events"}}'
-scripts/posthog-api.sh PATCH  /api/projects/$PID/feature_flags/123/ '{"active":false}'
-scripts/posthog-api.sh DELETE /api/projects/$PID/cohorts/456/
-```
-
-**Resource-specific helpers** - best for repeatable workflows (subcommand pattern):
-```bash
-scripts/posthog-flags.sh ls
-scripts/posthog-flags.sh enable my-flag-id
-scripts/posthog-query.sh hogql "SELECT event, count() FROM events WHERE timestamp >= now() - INTERVAL 1 DAY GROUP BY event ORDER BY count() DESC LIMIT 20"
-scripts/posthog-cohorts.sh add 42 "user_a,user_b,user_c"
-scripts/posthog-experiments.sh launch 7
-scripts/posthog-errors.sh resolve issue_xxx
-```
-
-**Official `@posthog/cli`** - only for sourcemaps + interactive HogQL prompt:
-```bash
-bunx @posthog/cli login                                           # browser-based auth into ~/.config/posthog
-bunx @posthog/cli query                                           # interactive HogQL REPL
-bunx @posthog/cli sourcemap inject ./dist
-bunx @posthog/cli sourcemap upload --directory ./dist --release-name app --release-version 1.2.3
-```
-
-Never `npm install -g @posthog/cli` - use `bunx @posthog/cli` so it always pins to the latest published version.
-
-## Multi-project / multi-region context
-
-PostHog has **one personal API key per user** (account-wide), but every project-scoped endpoint needs a `project_id`. The skill resolves the active project in this order:
-
-1. **Explicit positional arg** to a script (last positional, e.g., `scripts/posthog-flags.sh ls 12345`).
-2. **`POSTHOG_PROJECT_ID`** env var (auto-loaded from `.env.local` walking up to git root, then `.env`).
-3. Fail with `find IDs with: scripts/posthog-projects.sh ls`.
+Run the bundled preflight only when the task needs live PostHog access:
 
 ```bash
-# Working on app A (US Cloud) - its .env.local pins POSTHOG_PROJECT_ID + POSTHOG_HOST
-cd ~/code/myapp-a
-scripts/posthog-flags.sh ls         # uses myapp-a's project automatically
-
-# Working on app B (EU Cloud) - different .env.local
-cd ~/code/myapp-b
-scripts/posthog-flags.sh ls         # uses myapp-b's project automatically (and EU host)
-
-# Override for a single call
-POSTHOG_PROJECT_ID=99 POSTHOG_HOST=https://eu.posthog.com scripts/posthog-flags.sh ls
-
-# Or switch the active project for the whole shell:
-eval "$(scripts/posthog-projects.sh switch 12345)"
+bash "$POSTHOG_SKILL_DIR/scripts/posthog-ensure.sh"
 ```
 
-Helpers never persist, cache, or write the key anywhere - they read it once per invocation. `scripts/posthog-ensure.sh` reports the source of the loaded key (`shell environment` vs absolute `.env.local` path) so you can confirm which instance you're about to operate on.
+It checks Bash, Bun, the current PostHog CLI, `curl`, `jq`, credential shape, host, project context, and authentication through a read-only request.
 
-## Quick map - "I want to..." → command
+For documentation or schema discovery, skip live authentication. Inspect current local CLI guidance with credentials removed from the subprocess:
 
-| Intent | Command |
+```bash
+env -u POSTHOG_PERSONAL_API_KEY \
+    -u POSTHOG_API_KEY \
+    -u POSTHOG_CLI_API_KEY \
+    bunx --bun @posthog/cli@latest api --agent-help
+```
+
+For version-sensitive behavior not covered by current help or tool schemas, use Context7 with official PostHog documentation. Do not guess a flag, schema, or raw endpoint.
+
+## Authentication and project context
+
+For headless agent use, prefer the official CLI variables:
+
+```bash
+export POSTHOG_CLI_API_KEY=phx_xxxxxxxxxxxxxxxxxxxx
+export POSTHOG_CLI_PROJECT_ID=12345
+export POSTHOG_CLI_HOST=https://us.posthog.com
+```
+
+Use `https://eu.posthog.com` for EU Cloud or the exact origin of a self-hosted instance. The bundled helpers also accept `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, and `POSTHOG_HOST`, and map the CLI variable names to those internal names.
+
+Project API keys beginning with `phc_` are ingestion credentials and cannot operate the private management API. Use a scoped personal key for the resources required by the task. Before a mutation, verify the key source, active host, and target project reported by the preflight or a read-only tool call.
+
+Do not run interactive `login` merely because a key is missing. Report the missing credential or use browser authentication only when the user explicitly chose that flow.
+
+## Agent API workflow
+
+1. Find an unknown tool with a narrow search. Fall back to `tools` only when no useful search term exists.
+2. Run `info` once for every tool whose schema is not already in context.
+3. If `info` returns a `hint`, inspect that field with `schema`. Continue drilling into nested hints before building the input.
+4. For analytics over events, persons, sessions, or properties, inspect `read-data-schema` before querying. Do not assume canonical-looking event or property names exist in the active project.
+5. Prefer typed `query-*` tools when they express the requested analysis. Use `execute-sql` only for joins, window functions, warehouse queries, or entity searches that typed queries cannot represent.
+6. Before a mutation, run `call --dry-run` with the exact payload, inspect the target, then execute once. Add `--confirm` only when the CLI identifies the operation as destructive and the user's request authorizes it.
+7. Use `--json` when another command will consume the result. Report the affected scope and resulting state, with credentials and PII scrubbed.
+
+```bash
+bunx --bun @posthog/cli@latest api search feature-flag
+bunx --bun @posthog/cli@latest api info feature-flag-get-all
+bunx --bun @posthog/cli@latest api call --json feature-flag-get-all '{}'
+
+bunx --bun @posthog/cli@latest api info update-feature-flag
+bunx --bun @posthog/cli@latest api call --dry-run update-feature-flag '{"id":123,"active":false}'
+```
+
+Never reuse example input blindly. Tool names and fields can change; current `info` and `schema` output are authoritative for the installed CLI.
+
+## Helper boundary
+
+Use a bundled helper only when it adds something the official agent API does not provide cleanly:
+
+| Need | Command |
 |---|---|
-| Verify auth + show user/org/project | `scripts/posthog-ensure.sh` |
-| List all projects I can access | `scripts/posthog-projects.sh ls` |
-| Switch active project for this shell | `eval "$(scripts/posthog-projects.sh switch <id>)"` |
-| Run a HogQL query (sync) | `scripts/posthog-query.sh hogql "<sql>"` |
-| Run HogQL from a .sql file | `scripts/posthog-query.sh hogql-file query.sql` |
-| Run HogQL async + poll | `scripts/posthog-query.sh async "<sql>"` then `scripts/posthog-query.sh status <client_query_id>` |
-| Validate HogQL without running | `scripts/posthog-query.sh validate "<sql>"` |
-| Get HogQL TSV output | `scripts/posthog-query.sh table "<sql>"` |
-| List feature flags | `scripts/posthog-flags.sh ls` |
-| Get a flag by key | `scripts/posthog-flags.sh by-key my-flag` |
-| Toggle a flag on/off | `scripts/posthog-flags.sh enable <id>` / `disable <id>` |
-| Set a flag rollout % | `scripts/posthog-flags.sh rollout <id> 25` |
-| Copy a flag to other projects | `scripts/posthog-flags.sh copy <id> "456,789"` |
-| Schedule a flag change | `scripts/posthog-flags.sh schedule <id> 2026-12-01T00:00:00Z '{"active":false}'` |
-| List experiments | `scripts/posthog-experiments.sh ls` |
-| Launch / pause / end an experiment | `scripts/posthog-experiments.sh launch <id>` / `pause` / `end` |
-| Ship a winning variant | `scripts/posthog-experiments.sh ship <id> <variant_key>` |
-| Get experiment results | `scripts/posthog-experiments.sh results <id>` |
-| List cohorts | `scripts/posthog-cohorts.sh ls` |
-| Create a static cohort + add users | `scripts/posthog-cohorts.sh create-static "VIPs"` then `add <id> "user_a,user_b"` |
-| Find a person by email | `scripts/posthog-persons.sh by-email user@example.com` |
-| Bulk-delete persons | `scripts/posthog-persons.sh bulk-rm-distinct "id1,id2,id3"` |
-| List recent events of a name | `scripts/posthog-events.sh recent pageview 50` |
-| List event/property definitions | `scripts/posthog-events.sh defs` / `posthog-events.sh props` |
-| Distinct property values | `scripts/posthog-events.sh values "$browser"` |
-| List insights / dashboards | `scripts/posthog-insights.sh ls` / `posthog-dashboards.sh ls` |
-| Run an insight | `scripts/posthog-insights.sh run <id>` |
-| Open insight URL | `scripts/posthog-insights.sh url <id>` |
-| Pin a dashboard | `scripts/posthog-dashboards.sh pin <id>` |
-| List + resolve error tracking issues | `scripts/posthog-errors.sh ls` / `resolve <issue_id>` |
-| Assign an error to a user | `scripts/posthog-errors.sh assign <issue_id> <user_id>` |
-| Add a release annotation | `scripts/posthog-annotations.sh release "v1.2.3 deployed" 1.2.3` |
-| List + summarize a recording | `scripts/posthog-recordings.sh ls 50` / `summarize <recording_id>` |
-| List + invoke a Hog function | `scripts/posthog-cdp.sh ls` / `invoke <id> '<event-json>'` |
-| Manage LLM evaluations | `scripts/posthog-llm.sh evaluations ls` / `create <body>` / `run <id>` |
-| Save a HogQL view | `scripts/posthog-warehouse.sh view-create '{"name":"vw_top","query":{...}}'` |
-| Search docs | use the `posthog` MCP `docs-search` tool - bash skill does not duplicate this |
+| Verify live context | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-ensure.sh"` |
+| Call a verified REST path | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-api.sh" <METHOD> <PATH> [json-body]` |
+| Run HogQL from a file | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" hogql-file query.sql` |
+| Produce tabular HogQL output | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" table '<sql>'` |
+| Run and poll an async HogQL query | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-query.sh" async '<sql>'` |
+| List projects through direct REST | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-projects.sh" ls` |
+| Use a resource convenience wrapper | `bash "$POSTHOG_SKILL_DIR/scripts/posthog-<resource>.sh" <subcommand> ...` |
+| Upload source maps or symbols | `bunx --bun @posthog/cli@latest <sourcemap|dsym|hermes|proguard|symbol-sets> ...` |
 
-For full inventories, see [references/rest-api.md](references/rest-api.md), [references/mcp-parity.md](references/mcp-parity.md), [references/hogql-cookbook.md](references/hogql-cookbook.md), and [references/commands.md](references/commands.md).
+Keep `$PWD` in the user project when invoking helpers by absolute path. Helpers resolve context in this order:
 
-## HogQL workflow
+1. Explicit project ID argument
+2. Existing environment variable
+3. Nearest `.env.local`, then `.env`, walking upward from `$PWD`
 
-HogQL is the SQL-like query layer over events, persons, sessions, recordings, and warehouse tables.
+Treat raw REST references as a fallback snapshot, not a permanent contract. Verify a path and body against current PostHog documentation before adding or changing a helper.
 
-```bash
-# Sync (blocking) - best for queries that finish in seconds
-scripts/posthog-query.sh hogql "SELECT event, count() FROM events WHERE timestamp >= now() - INTERVAL 7 DAY GROUP BY event ORDER BY count() DESC LIMIT 50"
+## Guardrails
 
-# TSV output for pipes / spreadsheets
-scripts/posthog-query.sh table "SELECT properties.email FROM persons WHERE properties.plan='enterprise'" > emails.tsv
+- Person deletion is irreversible. Events remain, but identity linkage is lost. Inspect every person ID and the total count before deletion.
+- Feature flag changes can affect production immediately. Inspect the current definition, rollout, dependencies, and target project before mutation.
+- Shipping or ending an experiment changes its lifecycle and may not be reversible. Inspect current status and winning variant before execution.
+- Static cohort membership helpers do not apply to dynamic cohorts. Inspect cohort type first.
+- For bulk operations, materialize the target IDs, review count and sample, pace requests, and stop on the first unexpected response. Never pipe an unreviewed list directly into mutations.
+- Honor `Retry-After` on HTTP 429. Do not create unbounded retries or continuous polling loops.
+- Treat event properties, person data, recordings, errors, logs, and LLM traces as potentially sensitive. Retrieve only fields needed for the task and scrub PII from the final response.
+- Never pass a personal API key in a command argument or URL. Keep it in the environment so it is absent from shell history and process listings.
 
-# Async - for long-running queries
-qid=$(scripts/posthog-query.sh async "<heavy sql>" | jq -r '.client_query_id')
-while true; do
-  s=$(scripts/posthog-query.sh status "$qid" | jq -r '.query_status.complete')
-  [[ "$s" == "true" ]] && break
-  sleep 2
-done
-scripts/posthog-query.sh status "$qid" | jq '.results'
+## References
 
-# Validate before running expensive queries
-scripts/posthog-query.sh validate "SELECT * FROM events"
-```
+- Read [references/commands.md](references/commands.md) for current native CLI families and the full helper subcommand inventory.
+- Read [references/hogql-cookbook.md](references/hogql-cookbook.md) only when a typed query cannot express the analysis and raw HogQL is justified.
+- Read [references/rest-api.md](references/rest-api.md) only for a verified REST gap.
+- Read [references/mcp-parity.md](references/mcp-parity.md) only when translating a legacy PostHog MCP or helper workflow.
 
-Other supported `kind` values via `posthog-query.sh raw`: `EventsQuery`, `PersonsQuery`, `TrendsQuery`, `FunnelsQuery`, `RetentionQuery`, `PathsQuery`, `StickinessQuery`, `LifecycleQuery`, `DataWarehouseQuery`, `LogsQuery`, `ErrorTrackingQuery`. See [references/hogql-cookbook.md](references/hogql-cookbook.md) for canonical examples.
-
-## Pagination workflow
-
-PostHog uses cursor-based pagination - every list endpoint returns `{count, next, previous, results: [...]}`. The wrapper `posthog_paginate` (in `scripts/_lib.sh`) follows `.next` URLs automatically; helper scripts that return `.results[]` already use it where it matters. For ad-hoc paginated reads:
-
-```bash
-source scripts/_lib.sh
-require_posthog_key
-posthog_paginate "/api/projects/$POSTHOG_PROJECT_ID/feature_flags/?limit=100" \
-  | jq -s 'sort_by(.key)' > all-flags.json
-```
-
-## Rate-limit aware retry - built into `posthog_api`
-
-PostHog rate limits (per-team, all users in one org share the bucket):
-
-| Endpoint category | Limit |
-|---|---|
-| Analytics / list endpoints | 240/min, 1,200/hour |
-| Standard CRUD | 480/min, 4,800/hour |
-| `/query/` (HogQL) | 2,400/hour |
-| `events/values` | 60/min, 300/hour |
-| Public POST `/capture/` | unlimited (separate ingestion path, not in this skill) |
-
-On HTTP 429 the API returns `Retry-After` (seconds). `_lib.sh` reads it and retries up to 3 times. For higher concurrency, batch with explicit sleep:
-
-```bash
-# Migration: tag 5,000 persons. Pace 50 req/s to stay well under 480 req/min.
-for u in $(jq -r '.[].id' persons.json); do
-  scripts/posthog-persons.sh set-prop "$u" migrated true
-  sleep 0.02
-done
-```
-
-## Guardrails (don't skip)
-
-1. **Never embed `POSTHOG_PERSONAL_API_KEY` in a script committed to git.** Always read from env. Helpers enforce this.
-2. **`scripts/posthog-persons.sh rm`** is irreversible - deletes the person, their events stay anonymized but the link is gone. Use `bulk-rm` only with a verified ID list.
-3. **`scripts/posthog-projects.sh switch`** only prints an `export` line - eval it. It does NOT change PostHog server state.
-4. **Flag changes propagate immediately** in production via `/decide` and `local_evaluation`. Verify with `scripts/posthog-flags.sh status <id>` before flipping critical flags.
-5. **Experiment `ship`** ends the experiment and creates an exposure cohort - you cannot resume after shipping. Use `pause` / `end` if you need a soft stop.
-6. **Cohort `add`/`remove` only work on STATIC cohorts.** Dynamic (filter-based) cohorts manage their membership server-side; trying to add to one fails with 400.
-7. **HogQL queries against very large date ranges can hit the 2,400/hour quota fast.** Use `scripts/posthog-query.sh validate` to confirm syntax + cost estimate before running async.
-8. **Project API keys (`phc_*`) cannot read management endpoints.** The skill detects this format and refuses. Always use a personal key (`phx_*`).
-9. **The `/api/projects/{id}/` prefix is being deprecated** in favor of `/api/environments/{id}/` for data-scoped resources. Both currently work; this skill uses `projects/` for stability. Migrate when PostHog announces a hard deadline.
-10. **Personal API key scope mismatches surface as 403, not 401.** If a script fails with `forbidden`, you likely missed a scope when creating the key - re-issue with the right scopes.
-
-## When to reach for the references
-
-- **[references/rest-api.md](references/rest-api.md)** - endpoint catalog by resource (path, methods, scopes, body shape), pagination, rate limits, error format. Use when you need a path the helpers don't cover.
-- **[references/mcp-parity.md](references/mcp-parity.md)** - every `mcp__posthog__*` tool ↔ its bash equivalent. Use when migrating an MCP-based workflow to bash, or when the user references a specific MCP tool name.
-- **[references/hogql-cookbook.md](references/hogql-cookbook.md)** - canonical HogQL patterns: top events, conversion funnels, cohort analysis, retention, LLM cost roll-ups, error tracking joins, warehouse joins.
-- **[references/commands.md](references/commands.md)** - `@posthog/cli` subcommands (login, query, sourcemap inject/upload) + every helper script's full subcommand surface.
-
-## When NOT to use this skill
-
-- Writing application code that captures events at runtime → use `posthog-js`, `posthog-node`, `posthog-python`, etc. directly. Those use the public **project API key** (`phc_*`), not the personal key (`phx_*`) this skill uses.
-- Real-time event streaming → PostHog has no real-time event firehose API. Use webhooks/destinations or query with HogQL on a polling cadence.
-- Configuring billing, paying invoices, or managing seats → dashboard-only.
-- Modifying instance signing keys / OIDC → dashboard-only, no API surface.
-- Capturing source maps for error tracking from a bash script → use the official `bunx @posthog/cli sourcemap upload` rather than reimplementing the multipart upload here.
-- Continuous polling for new events → noisy and quota-burning. Set up a webhook destination + listener instead, or batch with `>= timestamp` filters at low cadence.
+For unknown native commands, inspect `bunx --bun @posthog/cli@latest <command> --help`. For unknown agent tools, use `api search`, `api info`, and `api schema` rather than relying on stale examples.

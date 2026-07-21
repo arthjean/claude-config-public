@@ -1,201 +1,169 @@
 ---
-model: opus
 name: vercel-cli
-description: "Manage Vercel projects, deployments, env vars, domains, edge config, webhooks, log drains, and bypass tokens from bash via the official vercel CLI + REST API, replacing the Vercel MCP server. Covers all 13 MCP tool equivalents plus the broader REST surface (33 endpoint categories, 250+ endpoints) the MCP doesn't expose. Authenticates with a personal VERCEL_TOKEN - no OAuth, no separate process. Use when the user asks to deploy/inspect/cancel/redeploy/rollback, list or modify projects/teams/domains/env vars/aliases, fetch build or runtime logs, create deployment protection bypass tokens, manage edge config items, register webhooks or log drains, or says 'vercel-cli', 'vercel CLI', 'deploy to Vercel', 'check my Vercel deployments', 'Vercel logs', 'Vercel env vars'. Do NOT use when the user wants to write application code that runs on Vercel (Next.js routes, edge functions, ISR config) - that's regular code authoring, not ops. Do NOT use to manage the Vercel MCP server itself."
-argument-hint: "[command or natural-language request]"
+description: "Operate Vercel from a coding-agent terminal with the official Vercel CLI and bundled REST helpers. Use when the agent needs to inspect or manage Vercel teams, projects, deployments, build or runtime logs, environment variables, domains, aliases, Edge Config stores, webhooks, deployment-protection bypass tokens, log drains, promotions, rollbacks, or redeployments; when the user asks to deploy to Vercel, diagnose a Vercel deployment, check Vercel logs, manage Vercel environment variables, or invoke vercel-cli; or when translating a Vercel MCP workflow to shell commands. Do not use for authoring application code that merely runs on Vercel, application runtime integration through @vercel/sdk, continuous monitoring, or Vercel MCP server configuration."
 ---
 
-# vercel-cli - Vercel via bash, no MCP
+# Vercel CLI
 
-Replace the Vercel MCP server with the official `vercel` CLI + a few `curl`-backed bash helpers for the REST gaps. Everything runs in your shell with `VERCEL_TOKEN`.
+Operate Vercel through `bunx vercel@latest` and the bundled shell helpers. Keep the working directory in the user's project so Vercel can resolve its local `.vercel` context.
 
-## Why this exists
+## Operating contract
 
-The Vercel MCP server (`https://mcp.vercel.com`) exposes 13 tools and uses OAuth - incompatible with personal access tokens used in headless agents. The `vercel` CLI covers ~10 of those tools natively when given `VERCEL_TOKEN`. The remaining gaps (deployment protection bypass, edge config items, webhooks, log drains, bulk env operations) are filled by direct REST calls against `https://api.vercel.com` - that's what `scripts/` contains.
+1. Set the absolute directory containing this `SKILL.md` as `VERCEL_SKILL_DIR`. For example:
 
-Latency is lower than MCP (no JSON-RPC roundtrip), the surface is git-greppable, and the same `VERCEL_TOKEN` works for both the CLI and every REST endpoint.
-
-## Hard prerequisites
-
-Before any command in this skill works, verify:
-
-1. **`bunx`** - comes with bun. The user's global rule mandates bun, never npm/npx.
-2. **`curl`** - install it with your OS package manager if it is not already available. Used for REST endpoints not exposed by the CLI.
-3. **`jq`** - used by helper scripts for JSON parsing. `sudo dnf install jq` if missing.
-4. **`VERCEL_TOKEN`** - generate at https://vercel.com/account/tokens. Pick a scope: full account access, or restrict to a single team. Export in shell:
    ```bash
-   export VERCEL_TOKEN=vcp_<redacted>
+   VERCEL_SKILL_DIR=~/.claude/skills/vercel-cli
    ```
-5. **(Optional) `VERCEL_TEAM_ID`** - your team ID (format `team_xxx`) or slug. Required if your token spans multiple teams. Look it up with `bunx vercel@latest teams list --token "$VERCEL_TOKEN"`.
-   ```bash
-   export VERCEL_TEAM_ID=team_xxxxxxxxxxxxxxxx
-   ```
-6. **(Optional) `VERCEL_PROJECT_ID`** - pin a project so you don't pass it on every command.
 
-Run `scripts/vercel-ensure.sh` to verify all of the above at once.
+2. Do not `cd` into the skill directory before running Vercel commands. The current project directory determines the active `.vercel/project.json` context.
+3. Use `bunx vercel@latest`. Do not install Vercel CLI globally and do not use npm, npx, pnpm, or yarn.
+4. Authenticate with `VERCEL_TOKEN` in the environment. Do not place the token in command arguments, output, committed files, or generated `.env` files.
+5. Prefer native Vercel CLI commands. Use bundled helpers for structured deployment output, REST-only operations, or non-interactive bulk operations.
+6. Keep browser use opt-in. Do not run `vercel login` or `vercel open` unless the user explicitly requested browser authentication or dashboard navigation.
+7. Require explicit destructive intent and an unambiguous target before deleting projects, deployments, domains, aliases, environment variables, Edge Config stores, webhooks, or bypass tokens. Apply the same rule to production deploys, promotion, rollback, cache deletion, and domain purchase or transfer.
+8. Inspect the current target before a production mutation. Do not infer team, project, environment, deployment, or domain scope from a destructive request with multiple plausible targets.
+9. Do not install missing dependencies automatically. Detect the host OS, report the missing dependency, and provide the appropriate install command.
 
-## Invocation pattern (always use this)
+## Preflight
 
-```bash
-bunx vercel@latest <command> [args] --token "$VERCEL_TOKEN"
-```
-
-Never `npm install -g vercel`. Never `vercel` (assumes global install - fragile). `bunx vercel@latest` always pins to the latest published version and respects the user's bun-only rule.
-
-For repeated use in a single shell session:
-```bash
-alias v='bunx vercel@latest --token "$VERCEL_TOKEN"'
-```
-
-The `--token` flag overrides interactive auth. Without it, the CLI walks an OAuth browser flow that doesn't work in agent contexts.
-
-## Project & team context - set it once, forget it
-
-Most commands need a project ID and (for multi-team accounts) a team ID. Three ways to provide them, in precedence order:
-
-1. **Per-command flags:** `--scope <team-slug>` (or `-S`) and `--project <name>` on each command.
-2. **Env vars:** `VERCEL_ORG_ID=team_xxx` and `VERCEL_PROJECT_ID=prj_xxx`. The CLI reads these automatically.
-3. **`.vercel/project.json` in cwd:** generated by `bunx vercel@latest link --token "$VERCEL_TOKEN" --yes`. Persists across sessions for that repo.
-
-The helpers in `scripts/` resolve in this order: explicit arg → `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` → `.vercel/project.json` → fail.
+Run the bundled preflight only when the task needs live Vercel access:
 
 ```bash
-# One-time link from inside a project repo:
-bunx vercel@latest link --token "$VERCEL_TOKEN" --yes
-# Writes .vercel/project.json with orgId + projectId.
+bash "$VERCEL_SKILL_DIR/scripts/vercel-ensure.sh"
 ```
 
-## Quick map - "I want to..." → command
+It checks Bun, the current Vercel CLI, `jq`, `curl`, `VERCEL_TOKEN`, local project context, and authentication. It performs one read-only authentication request.
+
+For documentation-only work, skip the live preflight. Inspect current command syntax directly:
+
+```bash
+bunx vercel@latest <command> --help
+```
+
+For version-sensitive behavior not covered by current help, use Context7 with official Vercel documentation. Do not open a browser unless the user opted in.
+
+## Authentication and targeting
+
+Export a narrowly scoped token:
+
+```bash
+export VERCEL_TOKEN=vcp_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+For one-off team operations, pass the scope explicitly:
+
+```bash
+bunx vercel@latest projects list --scope <team-slug-or-id>
+```
+
+For repeated repository work, link the project non-interactively:
+
+```bash
+bunx vercel@latest link --project <project-name-or-id> --scope <team-slug-or-id> --yes
+```
+
+`link` writes `.vercel/project.json`. Do not link merely to execute one account-level command when `--scope`, `--project`, or an explicit resource identifier is sufficient.
+
+Bundled helpers resolve scope in this order:
+
+1. Explicit script argument
+2. `VERCEL_TEAM_ID`, `VERCEL_ORG_ID`, or `VERCEL_PROJECT_ID`
+3. `.vercel/project.json` in the current working directory
+
+## Execution workflow
+
+1. Classify the request as read-only, mutating, production-affecting, or destructive.
+2. Resolve the team, project, environment, and resource identifier with read-only commands.
+3. Inspect current state before mutation. For deployment changes, inspect both the target deployment and the current production deployment.
+4. Use a native command from [references/commands.md](references/commands.md). Use a helper only when it adds required REST coverage, structured output, or non-interactive behavior.
+5. Execute the narrowest command that satisfies the request. Avoid project-wide commands when a deployment ID or resource ID exists.
+6. Report the affected scope, resource, operation, and resulting state. Scrub tokens, environment values, bypass secrets, URLs containing secret query parameters, and sensitive response fields.
+
+## Quick map
 
 | Intent | Command |
 |---|---|
-| Verify auth | `bunx vercel@latest whoami --token "$VERCEL_TOKEN"` |
-| List teams | `bunx vercel@latest teams list --token "$VERCEL_TOKEN"` |
-| List projects (current team) | `bunx vercel@latest project ls --token "$VERCEL_TOKEN"` |
-| Inspect a project | `bunx vercel@latest project inspect <name> --token "$VERCEL_TOKEN"` |
-| Deploy current dir to preview | `scripts/vercel-deploy.sh` |
-| Deploy current dir to production | `scripts/vercel-deploy.sh --prod` |
-| List recent deployments | `bunx vercel@latest ls --token "$VERCEL_TOKEN"` |
-| Inspect a deployment | `bunx vercel@latest inspect <url-or-id> --token "$VERCEL_TOKEN"` |
-| Get build logs for a deployment | `scripts/vercel-logs.sh build <url-or-id>` |
-| Tail runtime logs (live) | `scripts/vercel-logs.sh runtime <url> --follow` |
-| Cancel an in-progress deployment | `bunx vercel@latest rm <id> --token "$VERCEL_TOKEN"` (force-cancels via REST is also possible - see [rest-api.md](references/rest-api.md)) |
-| Promote a preview to production | `bunx vercel@latest promote <url-or-id> --token "$VERCEL_TOKEN"` |
-| Rollback to a prior deployment | `bunx vercel@latest rollback <url-or-id> --token "$VERCEL_TOKEN"` |
-| List env vars for a project | `scripts/vercel-env.sh ls <project>` |
-| Add an encrypted env var | `scripts/vercel-env.sh add <project> KEY value production` |
-| Pull env vars to .env.local | `bunx vercel@latest env pull --environment=production --token "$VERCEL_TOKEN"` |
-| List domains | `bunx vercel@latest domains ls --token "$VERCEL_TOKEN"` |
-| Add a domain to a project | `bunx vercel@latest domains add example.com <project> --token "$VERCEL_TOKEN"` |
-| Buy a domain | `bunx vercel@latest domains buy example.com --token "$VERCEL_TOKEN"` |
-| Check domain availability/price | `scripts/vercel-api.sh GET "/v4/domains/status?name=example.com"` |
-| Create a deployment protection bypass | `scripts/vercel-bypass.sh create <project>` |
-| Fetch a protection-bypassed URL | `scripts/vercel-bypass.sh fetch <url> <bypass-token>` |
-| List edge configs | `scripts/vercel-edge-config.sh list` |
-| Upsert edge config items (bulk) | `scripts/vercel-edge-config.sh upsert <ec-id> items.json` |
-| Create a webhook | `scripts/vercel-webhooks.sh create https://your.url/hook deployment.succeeded,deployment.error` |
-| Search Vercel docs | `WebFetch https://vercel.com/docs` (no API equivalent - MCP-only) |
+| Verify authentication | `bunx vercel@latest whoami` |
+| List teams | `bunx vercel@latest teams list` |
+| List projects | `bunx vercel@latest projects list` |
+| Inspect a project | `bunx vercel@latest projects inspect <name-or-id>` |
+| List deployments | `bunx vercel@latest list [project]` |
+| Inspect a deployment as JSON | `bunx vercel@latest inspect <url-or-id> --format=json` |
+| Read build logs | `bunx vercel@latest inspect <url-or-id> --logs` |
+| Read recent runtime logs | `bunx vercel@latest logs <url-or-id> --json` |
+| Follow runtime logs | `bunx vercel@latest logs <url-or-id> --follow` |
+| Deploy preview with structured output | `bash "$VERCEL_SKILL_DIR/scripts/vercel-deploy.sh"` |
+| Deploy production with structured output | `bash "$VERCEL_SKILL_DIR/scripts/vercel-deploy.sh" --prod` |
+| Promote a deployment | `bunx vercel@latest promote <url-or-id>` |
+| Roll back production | `bunx vercel@latest rollback <url-or-id>` |
+| Redeploy a prior deployment | `bunx vercel@latest redeploy <url-or-id>` |
+| List environment variables | `bunx vercel@latest env list [environment]` |
+| Pull variables to a chosen file | `bunx vercel@latest env pull <filename> --environment=<environment>` |
+| Perform non-interactive env CRUD | `bash "$VERCEL_SKILL_DIR/scripts/vercel-env.sh" <action> ...` |
+| List or inspect domains | `bunx vercel@latest domains list` or `domains inspect <domain>` |
+| Check domain availability and price | `bunx vercel@latest domains check <domain>` and `domains price <domain>` |
+| Manage aliases | `bunx vercel@latest alias <list|set|remove> ...` |
+| Manage Edge Config | `bunx vercel@latest edge-config <command> ...` |
+| Manage webhooks | `bunx vercel@latest webhooks <command> ...` |
+| Create or revoke a bypass token | `bash "$VERCEL_SKILL_DIR/scripts/vercel-bypass.sh" <action> ...` |
+| Call a REST endpoint | `bunx vercel@latest api <endpoint> [options]` |
+| Call a REST gap with raw JSON | `bash "$VERCEL_SKILL_DIR/scripts/vercel-api.sh" <METHOD> <PATH> [json-body]` |
 
-For the full CLI surface, see [references/commands.md](references/commands.md).
-For raw REST endpoints, see [references/rest-api.md](references/rest-api.md).
-For 1:1 MCP tool mapping, see [references/mcp-parity.md](references/mcp-parity.md).
+## Deployment workflow
 
-## Deployment workflow - the canonical pattern
+Use `--dry` when the user wants to inspect deployment inputs without creating a deployment:
 
 ```bash
-# From inside a project repo, after one-time `vercel link`:
-scripts/vercel-deploy.sh           # deploys to preview, returns JSON {url, state, id}
-scripts/vercel-deploy.sh --prod    # deploys to production
+bunx vercel@latest deploy --dry --format=json
 ```
 
-The script wraps `vercel deploy --token "$VERCEL_TOKEN" --yes` and parses the resulting URL into structured JSON so it can be piped to other tools:
+For an authorized deploy, preserve structured output for downstream inspection:
 
 ```bash
-DEP_URL=$(scripts/vercel-deploy.sh --prod | jq -r '.url')
-echo "Production deploy: https://$DEP_URL"
+DEPLOYMENT=$(bash "$VERCEL_SKILL_DIR/scripts/vercel-deploy.sh")
+DEPLOYMENT_URL=$(printf '%s' "$DEPLOYMENT" | jq -r '.url')
+bunx vercel@latest inspect "$DEPLOYMENT_URL" --format=json
 ```
 
-To inspect the build log of a deployment:
+Use `--prod` only when production deployment is explicit. Before `promote` or `rollback`, inspect the target and the current production list. These operations change production routing even though they do not delete the underlying deployments.
+
+## Environment-variable workflow
+
+List keys and metadata without returning values whenever possible. Never echo or summarize secret values.
+
+Use native `env` commands for ordinary linked-project work. Use `vercel-env.sh` when the request needs non-interactive values, multiple targets, or explicit `encrypted`, `plain`, or `sensitive` types:
 
 ```bash
-scripts/vercel-logs.sh build "$DEP_URL"
+bash "$VERCEL_SKILL_DIR/scripts/vercel-env.sh" add \
+  <project> <KEY> @env:<SOURCE_VARIABLE> production preview sensitive
 ```
 
-## Env var workflow - encrypted, plain, sensitive
+Use `-` as the value argument to read from stdin when the value is already held in a shell variable. Avoid literal secrets in process arguments.
 
-Vercel env vars have three types:
-- `encrypted` (default) - stored encrypted, decrypted at runtime
-- `plain` - stored as-is, readable in dashboard
-- `sensitive` - encrypted **and** masked in dashboard, redacted from logs
+Treat `env pull` as a secret-bearing file write. Confirm the destination, avoid overwriting an existing file implicitly, and keep the result out of Git.
 
-And three target environments: `production`, `preview`, `development`.
+## REST and helper boundaries
 
-```bash
-# Add to all three environments
-scripts/vercel-env.sh add my-app DATABASE_URL "postgres://..." production preview development encrypted
+Prefer `vercel api` for endpoints represented in the CLI's current OpenAPI catalog. Use `vercel api list` to discover them and `--generate=curl` to inspect a request without executing it.
 
-# Add a sensitive var to production only
-scripts/vercel-env.sh add my-app STRIPE_SECRET_KEY sk_live_... production sensitive
+Use the bundled REST scripts when they provide a safer or more deterministic interface:
 
-# List current vars (REST returns full structure with target arrays + types)
-scripts/vercel-env.sh ls my-app
+- `vercel-api.sh`: generic authenticated REST call with JSON output
+- `vercel-bypass.sh`: deployment-protection bypass token lifecycle and protected fetches
+- `vercel-deploy.sh`: deployment with structured `{url, id, state, target}` output
+- `vercel-edge-config.sh`: deterministic Edge Config item patch operations
+- `vercel-env.sh`: non-interactive, typed, multi-target environment-variable CRUD
+- `vercel-logs.sh`: formatted build events and runtime log delegation
+- `vercel-webhooks.sh`: webhook CRUD with optional project filtering
 
-# Update a var by ID
-scripts/vercel-env.sh update my-app <env-id> "new-value"
+Read [references/rest-api.md](references/rest-api.md) only for a REST gap or endpoint contract. Read [references/mcp-parity.md](references/mcp-parity.md) only when translating a legacy Vercel MCP workflow.
 
-# Remove a var
-scripts/vercel-env.sh rm my-app <env-id>
+## Guardrails
 
-# Bulk pull to .env.local for local dev
-bunx vercel@latest env pull --environment=production --token "$VERCEL_TOKEN"
-```
-
-## Bypass token workflow (MCP `get_access_to_vercel_url` + `web_fetch_vercel_url`)
-
-When deployment protection is enabled (Pro/Enterprise), use a bypass token to share a private deployment URL or to fetch its content programmatically:
-
-```bash
-# 1. Create a bypass token tied to a project
-TOKEN_JSON=$(scripts/vercel-bypass.sh create my-app)
-SECRET=$(echo "$TOKEN_JSON" | jq -r '.secret')
-
-# 2a. Share the URL - append the token as a query param
-echo "https://my-app-xyz.vercel.app/?_vercel_share=$SECRET"
-
-# 2b. Or fetch the protected URL directly
-scripts/vercel-bypass.sh fetch https://my-app-xyz.vercel.app/api/private "$SECRET"
-
-# 3. Revoke when done
-scripts/vercel-bypass.sh rm my-app <token-id>
-```
-
-## Guardrails (don't skip)
-
-These prevent the most common destructive accidents:
-
-1. **Never embed `VERCEL_TOKEN` in a script committed to git.** Always read from env. The helpers in `scripts/` enforce this.
-2. **`vercel rm <project-name>` deletes ALL deployments of that project.** To remove a single deployment, pass its URL or ID:
-   ```bash
-   bunx vercel@latest rm my-app-xyz123.vercel.app --token "$VERCEL_TOKEN" --yes
-   ```
-3. **`vercel rollback` is irreversible without another deploy.** It promotes an old deployment back to production - your current production deployment stops being "current" but isn't deleted. Verify the target with `vercel inspect` first.
-4. **Production env var changes don't propagate to running deployments.** They only apply to **future** builds. Trigger a redeploy after changing production vars:
-   ```bash
-   bunx vercel@latest redeploy <prod-url> --token "$VERCEL_TOKEN"
-   ```
-5. **Bypass tokens leak full access if shared publicly.** They survive in browser history and HTTP referrer headers. Use sparingly, revoke after use, never log them.
-6. **Domain transfers are slow and irreversible.** `domains buy` takes 5-15 minutes to provision and may fail silently - always poll the deployment events endpoint before assuming success.
-7. **Rate limits exist** but aren't publicly documented per tier. On 429 responses, the helpers in `scripts/` retry once with 5s backoff. For high-volume bulk ops, batch and pace your calls.
-
-## When to reach for the references
-
-- **[references/commands.md](references/commands.md)** - Full vercel CLI command reference. 45 command groups, all flags, output formats. Read when you need a flag you don't remember.
-- **[references/rest-api.md](references/rest-api.md)** - Direct `curl` patterns against `https://api.vercel.com`. The `vercel_api()` boilerplate, endpoint paths by category, polling async ops, rate-limit handling, OpenAPI spec link.
-- **[references/mcp-parity.md](references/mcp-parity.md)** - Mapping table: every Vercel MCP tool (13) ↔ its CLI/script equivalent. Read when porting a workflow that previously used MCP.
-
-## When NOT to use this skill
-
-- Writing application code that runs on Vercel (Next.js routes, edge functions, ISR config) → that's regular code authoring, not ops. Use the relevant Next.js / framework skill.
-- Managing the Vercel MCP server itself, OAuth flows, or remote MCP authentication.
-- Operating Vercel resources from inside a deployed function at runtime → use the `@vercel/sdk` JavaScript client instead.
-- Continuous monitoring or alerting → use Vercel's native alerting + observability, log drains, or the analytics dashboard, not bash polling.
+- `vercel remove <project-name>` removes every deployment for that project. Prefer a deployment ID. Use `--safe` when active aliases must be preserved.
+- `vercel projects remove <name>` deletes the project. Do not confuse it with deployment removal.
+- Environment-variable changes affect future deployments. Redeploy only when the user also intends to apply the change.
+- Bypass secrets grant access to protected deployments. Prefer the request header over query parameters, never log the secret, and revoke temporary tokens after use.
+- Domain purchase, removal, and transfer affect external ownership or routing. Inspect the domain and target team before mutation.
+- For HTTP 429 responses, honor `Retry-After` when present. Do not create an unbounded retry loop.
+- For flags not documented in this skill, inspect current `--help` rather than guessing.

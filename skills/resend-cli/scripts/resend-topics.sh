@@ -66,3 +66,4 @@ case "$action" in
 
   *) err "unknown action: $action  (try: create|ls|get|update|rm)" ;;
 esac
+

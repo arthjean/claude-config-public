@@ -1,4 +1,4 @@
-# Shared bash helpers for resend-cli scripts.
+# Shared Bash helpers for the resend-cli skill.
 # Source from each script: source "$(dirname "$0")/_lib.sh"
 
 set -euo pipefail
@@ -9,14 +9,23 @@ warn() { printf '\033[33m!\033[0m %s\n' "$1" >&2; }
 # Resend has a single global API. Override only for proxies, mocks, or self-hosted dev tunnels.
 RESEND_HOST="${RESEND_HOST:-https://api.resend.com}"
 RESEND_HOST="${RESEND_HOST%/}"
+case "$RESEND_HOST" in
+  https://*) ;;
+  http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*)
+    warn "RESEND_HOST uses local HTTP; never point a production key at an untrusted local service"
+    ;;
+  *) err "RESEND_HOST must use HTTPS, localhost, or 127.0.0.1" ;;
+esac
 
 # A non-empty User-Agent is REQUIRED - calls without it return error code 1010 / 403.
-RESEND_USER_AGENT="${RESEND_USER_AGENT:-resend-cli-skill/1.0 (+https://resend.com/docs/api-reference)}"
+RESEND_USER_AGENT="${RESEND_USER_AGENT:-resend-agent-skill/1.0 (+https://resend.com/docs/api-reference)}"
 
-# Auto-load RESEND_API_KEY (and optional RESEND_HOST, RESEND_FROM, RESEND_AUDIENCE_ID) from a
+# Auto-load RESEND_API_KEY and selected Resend values from a
 # project .env file if not already set. Walks up from $PWD looking for .env.local then .env,
 # stopping at the first git repo root or $HOME. Only RESEND_-prefixed keys are extracted:
-# the rest of the file is ignored (no shell evaluation, no var leakage).
+# the rest of the file is ignored (no shell evaluation, no var leakage). RESEND_HOST and
+# RESEND_USER_AGENT are intentionally never loaded from project files because they control
+# where credentials are sent and how requests are identified.
 #
 # Precedence: shell env > .env.local > .env > error.
 _resend_load_env() {
@@ -32,7 +41,7 @@ _resend_load_env() {
           [[ "$line" =~ ^[[:space:]]*$ ]] && continue
           line="${line#export }"; line="${line# }"
           case "$line" in
-            RESEND_API_KEY=*|RESEND_KEY=*|RESEND_HOST=*|RESEND_FROM=*|RESEND_AUDIENCE_ID=*|RESEND_WEBHOOK_SECRET=*|RESEND_USER_AGENT=*) ;;
+            RESEND_API_KEY=*|RESEND_KEY=*|RESEND_FROM=*|RESEND_AUDIENCE_ID=*|RESEND_WEBHOOK_SECRET=*) ;;
             *) continue ;;
           esac
           key="${line%%=*}"; val="${line#*=}"
@@ -46,12 +55,6 @@ _resend_load_env() {
                 export _RESEND_LOADED_FROM="$dir/$f"
               fi
               ;;
-            RESEND_HOST)
-              if [[ "$RESEND_HOST" == "https://api.resend.com" ]]; then
-                RESEND_HOST="${val%/}"
-                export RESEND_HOST
-              fi
-              ;;
             RESEND_FROM)
               [[ -z "${RESEND_FROM:-}" ]] && export RESEND_FROM="$val"
               ;;
@@ -60,9 +63,6 @@ _resend_load_env() {
               ;;
             RESEND_WEBHOOK_SECRET)
               [[ -z "${RESEND_WEBHOOK_SECRET:-}" ]] && export RESEND_WEBHOOK_SECRET="$val"
-              ;;
-            RESEND_USER_AGENT)
-              [[ "$RESEND_USER_AGENT" == "resend-cli-skill/1.0"* ]] && RESEND_USER_AGENT="$val" && export RESEND_USER_AGENT
               ;;
           esac
         done < "$dir/$f"
@@ -90,7 +90,7 @@ Three ways to provide it (highest precedence first):
      Permission options: full_access (manage everything) or sending_access (send-only, optionally domain-scoped)"
   case "$RESEND_API_KEY" in
     re_*) ;;
-    *) warn "RESEND_API_KEY does not start with 're_' (got first 6 chars: '${RESEND_API_KEY:0:6}...'). Resend keys begin with 're_' - continuing in case of test stubs." ;;
+    *) warn "RESEND_API_KEY does not start with 're_'. Continuing in case this is an intentional test stub." ;;
   esac
 }
 
@@ -127,19 +127,28 @@ resend_api() {
 
   [[ "$path" == /* ]] || path="/$path"
 
+  local request_body="" curl_config auth_value idempotency_value
+  auth_value="${RESEND_API_KEY//\\/\\\\}"
+  auth_value="${auth_value//\"/\\\"}"
+  curl_config="header = \"Authorization: Bearer ${auth_value}\""$'\n'
+
+  if [[ -n "${RESEND_IDEMPOTENCY_KEY:-}" ]]; then
+    idempotency_value="${RESEND_IDEMPOTENCY_KEY//\\/\\\\}"
+    idempotency_value="${idempotency_value//\"/\\\"}"
+    curl_config+="header = \"Idempotency-Key: ${idempotency_value}\""$'\n'
+  fi
+
   local args=(
     --silent --show-error
     --write-out '\n%{http_code}'
     -X "$method"
-    -H "Authorization: Bearer $RESEND_API_KEY"
     -H "Accept: application/json"
     -H "User-Agent: $RESEND_USER_AGENT"
   )
 
-  [[ -n "${RESEND_IDEMPOTENCY_KEY:-}" ]] && args+=(-H "Idempotency-Key: $RESEND_IDEMPOTENCY_KEY")
-
   if [[ $# -gt 0 && ( "${1:0:1}" == "{" || "${1:0:1}" == "[" ) ]]; then
-    args+=(-H "Content-Type: application/json" -d "$1")
+    request_body="$1"
+    args+=(-H "Content-Type: application/json" --data-binary @-)
     shift
   fi
 
@@ -147,13 +156,22 @@ resend_api() {
 
   local url="${RESEND_HOST}${path}"
   local attempt=1 max_attempts=3 response status body retry_after
-  local headers_file="/tmp/resend-cli-headers.$$"
+  local headers_file
+  headers_file=$(mktemp "${TMPDIR:-/tmp}/resend-cli-headers.XXXXXX") || err "could not create a temporary headers file"
 
   while [[ $attempt -le $max_attempts ]]; do
-    response=$(curl "${args[@]}" -D "$headers_file" "$url" 2>&1) || {
+    if [[ -n "$request_body" ]]; then
+      response=$(printf '%s' "$request_body" \
+        | curl --config /dev/fd/3 "${args[@]}" -D "$headers_file" "$url" 3<<<"$curl_config" 2>&1) || {
+        [[ $attempt -lt $max_attempts ]] || { rm -f "$headers_file"; err "curl failed: $response"; }
+        sleep 2; attempt=$((attempt + 1)); continue
+      }
+    else
+      response=$(curl --config /dev/fd/3 "${args[@]}" -D "$headers_file" "$url" 3<<<"$curl_config" 2>&1) || {
       [[ $attempt -lt $max_attempts ]] || { rm -f "$headers_file"; err "curl failed: $response"; }
       sleep 2; attempt=$((attempt + 1)); continue
-    }
+      }
+    fi
     status="${response##*$'\n'}"
     body="${response%$'\n'*}"
 

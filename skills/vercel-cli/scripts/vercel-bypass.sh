@@ -6,11 +6,11 @@
 #   ./vercel-bypass.sh create <project-id-or-name> [--name "purpose"]
 #   ./vercel-bypass.sh list   <project-id-or-name>
 #   ./vercel-bypass.sh rm     <project-id-or-name> <token-id>
-#   ./vercel-bypass.sh fetch  <protected-url>      <bypass-secret>
+#   ./vercel-bypass.sh fetch  <protected-url>      <bypass-secret | ->
 #
 # Examples:
 #   TOK=$(./vercel-bypass.sh create my-app | jq -r .secret)
-#   ./vercel-bypass.sh fetch https://my-app-xyz.vercel.app/api/private "$TOK"
+#   printf '%s' "$TOK" | ./vercel-bypass.sh fetch https://my-app-xyz.vercel.app/api/private -
 #   ./vercel-bypass.sh list my-app
 #   ./vercel-bypass.sh rm my-app bp_xxx
 
@@ -54,13 +54,19 @@ case "$action" in
 
   fetch)
     [[ $# -ge 2 ]] || err "usage: $0 fetch <protected-url> <bypass-secret>"
-    url="$1"; secret="$2"
+    url="$1"; secret_arg="$2"
+    if [[ "$secret_arg" == "-" ]]; then
+      secret=$(</dev/stdin)
+    else
+      secret="$secret_arg"
+    fi
+    [[ -n "$secret" ]] || err "bypass secret is empty"
     # Vercel deployment protection accepts the secret as a query param OR as the
     # x-vercel-protection-bypass header. Header is safer (not logged in URLs).
-    curl -fsSL \
-      -H "x-vercel-protection-bypass: $secret" \
-      -H "x-vercel-set-bypass-cookie: samesitenone" \
-      "$url"
+    curl_config=$(printf \
+      'header = "x-vercel-protection-bypass: %s"\nheader = "x-vercel-set-bypass-cookie: samesitenone"\n' \
+      "$secret")
+    curl -fsSL --config /dev/fd/3 "$url" 3<<<"$curl_config"
     ;;
 
   *)

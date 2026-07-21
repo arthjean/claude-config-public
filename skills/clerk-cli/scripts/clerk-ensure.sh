@@ -22,13 +22,12 @@ else
   errors=$((errors + 1))
 fi
 
-# 2. clerk CLI reachable via bunx (the package is @clerk/dev-cli, exposed as `clerk`)
+# 2. Clerk CLI reachable via bunx (the current package is `clerk`)
 if command -v bun >/dev/null 2>&1; then
-  if version=$(bunx clerk --version 2>/dev/null | tail -n1); then
+  if version=$(bunx clerk@latest --version 2>/dev/null | tail -n1); then
     ok "clerk ($version)"
   else
-    warn "bunx clerk --version failed. The CLI is optional - direct curl helpers still work."
-    warn "  If you want the proxy: bunx clerk auth login"
+    warn "bunx clerk@latest --version failed. The CLI is optional; direct curl helpers still work."
   fi
 fi
 
@@ -36,7 +35,7 @@ fi
 if command -v jq >/dev/null 2>&1; then
   ok "jq ($(jq --version))"
 else
-  fail "jq not found. Install it with your OS package manager."
+  fail "jq not found. Install it with the host system package manager."
   errors=$((errors + 1))
 fi
 
@@ -44,7 +43,7 @@ fi
 if command -v curl >/dev/null 2>&1; then
   ok "curl ($(curl --version | head -n1 | awk '{print $2}'))"
 else
-  fail "curl not found. Install it with your OS package manager."
+  fail "curl not found. Install it with the host system package manager."
   errors=$((errors + 1))
 fi
 
@@ -67,12 +66,12 @@ else
   fail "CLERK_SECRET_KEY not found. Three options (highest precedence first):"
   fail "  1. export CLERK_SECRET_KEY=sk_live_xxx in your shell"
   fail "  2. cd into a project with .env.local containing CLERK_SECRET_KEY=..."
-  fail "  3. run 'bunx clerk env pull' inside a Clerk-linked project"
+  fail "  3. run 'bunx clerk@latest env pull' inside a Clerk-linked project"
   errors=$((errors + 1))
 fi
 
 # 6. API version
-api_version="${CLERK_API_VERSION:-2025-11-10}"
+api_version="${CLERK_API_VERSION:-2026-05-12}"
 if [[ -n "${CLERK_API_VERSION:-}" ]]; then
   ok "CLERK_API_VERSION explicitly pinned to $api_version"
 else

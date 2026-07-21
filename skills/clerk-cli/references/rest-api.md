@@ -7,7 +7,7 @@ When the CLI doesn't cover a resource and the resource-specific helper isn't eno
 ```bash
 curl -fsS \
   -H "Authorization: Bearer $CLERK_SECRET_KEY" \
-  -H "Clerk-API-Version: 2025-11-10" \
+  -H "Clerk-API-Version: 2026-05-12" \
   -H "Accept: application/json" \
   "https://api.clerk.com/v1/<path>"
 ```
@@ -18,13 +18,13 @@ For POST/PATCH:
 curl -fsS \
   -X POST \
   -H "Authorization: Bearer $CLERK_SECRET_KEY" \
-  -H "Clerk-API-Version: 2025-11-10" \
+  -H "Clerk-API-Version: 2026-05-12" \
   -H "Content-Type: application/json" \
   -d '{"name":"Acme"}' \
   "https://api.clerk.com/v1/organizations"
 ```
 
-The `clerk_api()` function in `scripts/_lib.sh` wraps this exact pattern with 429 retry. Prefer `scripts/clerk-api.sh METHOD PATH [body]` for scripts.
+The `clerk_api()` function in `scripts/_lib.sh` wraps this pattern with one bounded 429 retry. Prefer `bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" METHOD PATH [body]` for scripts.
 
 ## Base URL & version
 
@@ -32,10 +32,10 @@ The `clerk_api()` function in `scripts/_lib.sh` wraps this exact pattern with 42
 |---|---|
 | Base URL | `https://api.clerk.com/v1` |
 | Auth | `Authorization: Bearer $CLERK_SECRET_KEY` (sk_test_/sk_live_) |
-| Version header | `Clerk-API-Version: 2025-11-10` (current stable) |
-| Without version | Resolves to legacy `2021-02-05` - **always pin** |
+| Version header | `Clerk-API-Version: 2026-05-12` |
+| Pinning rule | Use exactly one version mechanism: the header or `__clerk_api_version`, never both |
 
-Source: [clerk.com/docs/guides/development/upgrading/versioning](https://clerk.com/docs/guides/development/upgrading/versioning).
+The helpers pin the current stable contract verified on 2026-07-16. API version `2026-05-12` moves user and organization metadata updates to dedicated endpoints. Source: [Clerk versioning overview](https://clerk.com/docs/guides/development/upgrading/versioning).
 
 ## Pagination
 
@@ -50,10 +50,11 @@ Classic `limit` + `offset`. No cursors.
 Iterate manually for large tables:
 
 ```bash
-total=$(scripts/clerk-api.sh GET /users/count | jq -r '.total_count')
+total=$(bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET /users/count | jq -r '.total_count')
 offset=0
 while [[ $offset -lt $total ]]; do
-  scripts/clerk-api.sh GET "/users?limit=500&offset=$offset" | jq -c '.[]' >> all-users.ndjson
+  bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET "/users?limit=500&offset=$offset" \
+    | jq -c '.[]' >> all-users.ndjson
   offset=$((offset + 500))
 done
 ```
@@ -71,13 +72,15 @@ Source: [clerk.com/docs/guides/how-clerk-works/system-limits](https://clerk.com/
 | `POST /invitations/bulk` | 25 / hr |
 | `POST /organizations/{id}/invitations` | 250 / hr |
 | `POST /organizations/{id}/invitations/bulk` | 50 / hr |
+| User metadata update endpoints | 10 / 10s per user |
+| Organization metadata update endpoints | 10 / 10s per organization |
 
-On 429: response includes `Retry-After: <seconds>` header. `scripts/_lib.sh::clerk_api` retries once honoring it. For high-volume scripts, pace explicitly:
+On 429, the response includes `Retry-After: <seconds>`. `scripts/_lib.sh::clerk_api` retries once and honors it. Pace high-volume development-instance work below the 10 requests per second aggregate limit:
 
 ```bash
 for u in $(jq -r '.[].id' users.json); do
-  scripts/clerk-users.sh metadata "$u" public '{"migrated":true}'
-  sleep 0.02   # ~50 req/s - well under 100/s prod ceiling
+  bash "$CLERK_SKILL_DIR/scripts/clerk-users.sh" metadata "$u" public '{"migrated":true}'
+  sleep 0.12
 done
 ```
 
@@ -94,6 +97,8 @@ Every `<path>` below is appended to `https://api.clerk.com/v1`. `{id}` placehold
 | GET | `/users/{id}` | Get single user |
 | POST | `/users` | Create user |
 | PATCH | `/users/{id}` | Update user |
+| PATCH | `/users/{id}/metadata` | Deep-merge selected metadata fields |
+| PUT | `/users/{id}/metadata` | Replace selected metadata fields |
 | DELETE | `/users/{id}` | Delete user (irreversible) |
 | POST | `/users/{id}/ban` | Ban (reversible) |
 | POST | `/users/{id}/unban` | Unban |
@@ -114,6 +119,8 @@ Every `<path>` below is appended to `https://api.clerk.com/v1`. `{id}` placehold
 | POST | `/organizations` | Create (`created_by` required) |
 | GET | `/organizations/{id}` | Get |
 | PATCH | `/organizations/{id}` | Update |
+| PATCH | `/organizations/{id}/metadata` | Deep-merge selected metadata fields |
+| PUT | `/organizations/{id}/metadata` | Replace selected metadata fields |
 | DELETE | `/organizations/{id}` | Delete |
 | GET | `/organizations/{id}/memberships` | List members |
 | POST | `/organizations/{id}/memberships` | Add member (`user_id`, `role`) |
@@ -254,38 +261,38 @@ Every `<path>` below is appended to `https://api.clerk.com/v1`. `{id}` placehold
 | GET | `/api_keys/{id}` | Get |
 | DELETE | `/api_keys/{id}` | Revoke |
 
-## Things you cannot do via Backend API
+## Backend API boundary
 
-The following are **dashboard-only** as of April 2026:
+The Backend API manages resources inside one Clerk instance. Account and workspace operations use the Platform API or the dashboard instead:
 
-- **Create / delete Clerk applications** - `POST /v1/applications` does not exist; `clerk apps create` walks the dashboard.
-- **Configure social OAuth providers** (Google, GitHub, etc.) - read which are enabled via `GET /instance` but cannot set client IDs / secrets via API.
-- **Retrieve a webhook signing secret** - `whsec_...` is shown once at endpoint creation in the dashboard. No API endpoint to retrieve it later. Capture at creation or rotate the endpoint.
-- **Rotate JWKS signing keys** - read via `GET /jwks` but rotation is dashboard-only.
-- **Billing / plan changes** - read-only fields exist (`payment_method_id`, `statement_id` as of `2025-11-10`); writes are dashboard-only.
-- **Transfer application ownership** - no API surface.
+- Use `clerk apps list` and `clerk apps create` for application management.
+- Use `clerk config schema`, `config pull`, and `config patch` for instance configuration, including supported social connection settings.
+- Use `clerk api --platform` only when the user explicitly requests a Platform API operation.
+- Analytics, usage metrics, application and email logs, workspace membership, subscription billing, Account Portal branding, and Clerk Protect settings remain dashboard surfaces according to the current CLI documentation.
+
+Do not infer that a missing Backend API path is impossible across all Clerk surfaces. Check current `clerk --help`, `clerk api ls`, and `clerk api --platform ls`.
 
 ## Useful jq recipes
 
 ```bash
 # Just IDs and primary emails
-scripts/clerk-api.sh GET /users \
+bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET /users \
   | jq '.[] | {id, email: .email_addresses[0].email_address}'
 
 # Count active sessions per user
-scripts/clerk-api.sh GET "/sessions?status=active&limit=500" \
+bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET "/sessions?status=active&limit=500" \
   | jq 'group_by(.user_id) | map({user_id: .[0].user_id, n: length}) | sort_by(.n) | reverse'
 
 # All orgs the user user_xxx is in, with role
-scripts/clerk-api.sh GET /users/user_xxx/organization_memberships \
+bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET /users/user_xxx/organization_memberships \
   | jq '.[] | {org: .organization.name, role}'
 
 # Users created in the last 24h
 since=$(date -d '24 hours ago' +%s)000   # ms epoch
-scripts/clerk-api.sh GET "/users?limit=500&order_by=-created_at" \
+bash "$CLERK_SKILL_DIR/scripts/clerk-api.sh" GET "/users?limit=500&order_by=-created_at" \
   | jq --argjson since "$since" '[.[] | select(.created_at >= $since)]'
 ```
 
 ## OpenAPI spec
 
-Clerk publishes an OpenAPI/Swagger spec at [clerk.com/docs/reference/backend-api](https://clerk.com/docs/reference/backend-api) (Redoc-rendered). For programmatic access, the JSON is at `https://api.clerk.com/v1/_openapi.json` (subject to change - verify with `bunx clerk api ls` for the authoritative endpoint list).
+Clerk publishes the current Backend API reference at [clerk.com/docs/reference/backend-api](https://clerk.com/docs/reference/backend-api). The versioned OpenAPI source used by these helpers is [bapi/2026-05-12.yml](https://github.com/clerk/openapi-specs/blob/main/bapi/2026-05-12.yml). Use `bunx clerk@latest --mode agent api ls` to inspect the current CLI catalog before adding a raw path.

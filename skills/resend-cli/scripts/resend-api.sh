@@ -20,3 +20,4 @@ require_resend_key
 
 method="$1"; path="$2"; shift 2
 resend_api "$method" "$path" "$@" | pretty
+

@@ -4,13 +4,13 @@
 #
 # Subcommands:
 #   create   Create a new API key
-#              Flags: --name <label> --permission <full_access|sending_access> [--domain <domain_id>]
-#              Notes: domain scoping only works with sending_access; the raw token is shown ONCE.
+#              Flags: --name <label> --permission <full_access|sending_access> [--domain <domain_id>] --out <path>
+#              Notes: domain scoping only works with sending_access; the raw token is saved once to a mode-600 file.
 #   ls       List all API keys (no token values shown - those are write-once)
 #   rm       Delete an API key                rm <key_id>
 #
 # Examples:
-#   resend-api-keys.sh create --name "CI/CD" --permission sending_access --domain dom-123
+#   resend-api-keys.sh create --name "CI/CD" --permission sending_access --domain dom-123 --out ./resend-key.json
 #   resend-api-keys.sh ls | jq '.data[] | {id, name, permission, created_at}'
 #   resend-api-keys.sh rm key_xyz
 
@@ -23,12 +23,13 @@ action="$1"; shift
 
 case "$action" in
   create)
-    name=""; permission=""; domain=""
+    name=""; permission=""; domain=""; out=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --name)       name="$2"; shift 2 ;;
         --permission) permission="$2"; shift 2 ;;
         --domain)     domain="$2"; shift 2 ;;
+        --out)        out="$2"; shift 2 ;;
         *) err "unknown flag: $1" ;;
       esac
     done
@@ -36,10 +37,16 @@ case "$action" in
     [[ -n "$permission" ]] || err "missing --permission <full_access|sending_access>"
     case "$permission" in full_access|sending_access) ;; *) err "permission must be full_access or sending_access (got: $permission)" ;; esac
     [[ -n "$domain" && "$permission" != "sending_access" ]] && err "--domain is only valid with --permission sending_access"
+    [[ -n "$out" ]] || err "missing --out <secure-json-path>; the raw token is returned once and must not be printed"
+    [[ ! -e "$out" ]] || err "refusing to overwrite existing path: $out"
     body=$(jq -nc --arg n "$name" --arg p "$permission" '{name:$n, permission:$p}')
     [[ -n "$domain" ]] && body=$(printf '%s' "$body" | jq -c --arg v "$domain" '. + {domain_id: $v}')
-    warn "the response contains the raw key token - copy it immediately, it is shown only once."
-    resend_api POST "/api-keys" "$body" | pretty
+    response=$(resend_api POST "/api-keys" "$body")
+    old_umask=$(umask)
+    umask 077
+    printf '%s\n' "$response" > "$out"
+    umask "$old_umask"
+    printf '%s' "$response" | jq --arg saved_to "$out" 'del(.token) + {token_saved_to: $saved_to}'
     ;;
 
   ls|list)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # posthog-llm.sh - LLM analytics: prompts, evaluations, sentiment, summarization, trace reviews,
-# review queues, skills (LLM analytics skills, NOT Claude Code skills), clustering jobs.
+# review queues, skills (PostHog LLM analytics resources, not Codex skills), clustering jobs.
 # Replaces MCP tools: llma-prompt-*, llma-evaluation-*, llma-evaluation-config-*,
 #                     llma-evaluation-report-*, llma-evaluation-judge-models, llma-evaluation-test-hog,
 #                     llma-sentiment-create, llma-summarization-create, llma-trace-review-*,

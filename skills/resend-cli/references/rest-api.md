@@ -1,15 +1,16 @@
 # Resend REST API - endpoint catalog
 
-Base URL: `https://api.resend.com` (HTTPS only). No version prefix. No `Api-Version` header today (calendar versioning is planned). Source: https://resend.com/docs/api-reference/introduction and https://resend.com/docs/llms.txt (May 2026).
+Use this catalog only for a raw REST operation that the current official CLI does not cover. It was imported from a May 2026 API snapshot, so verify unfamiliar paths against [current Resend API documentation](https://resend.com/docs/api-reference/introduction) before executing them. The base URL is `https://api.resend.com`.
 
 ## Auth
 
+Keep `RESEND_API_KEY` in the environment and use the bundled wrapper. It places authorization in a curl config file descriptor instead of a process argument:
+
 ```bash
-curl https://api.resend.com/domains \
-  -H "Authorization: Bearer re_<redacted>" \
-  -H "Accept: application/json" \
-  -H "User-Agent: resend-cli-skill/1.0"        # REQUIRED - missing UA returns 403 / error 1010
+bash "$RESEND_SKILL_DIR/scripts/resend-api.sh" GET /domains
 ```
+
+The wrapper also sends `Accept: application/json` and a non-empty `User-Agent`.
 
 Key formats: `re_*`. Two permission tiers:
 
@@ -22,7 +23,7 @@ No granular per-resource scopes. No key rotation - delete and recreate.
 
 ## Rate limits
 
-5 requests/second per **team** (across all keys). Response always carries:
+The documented default is 5 requests per second per **team** across all keys. Responses can carry:
 
 ```
 ratelimit-limit: 5
@@ -223,29 +224,16 @@ Body: `{ name, type: "string"|"number"|"boolean"|"date", description }`.
 
 Common event types: `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.complained`, `email.bounced`, `email.opened`, `email.clicked`, `email.failed`, `contact.created`, `contact.updated`, `contact.deleted`, `domain.created`, `domain.updated`, `domain.deleted`.
 
-### Automations *(MCP gap - not in resend-mcp)*
+### Automations and events
 
-| Method | Path                          | Purpose                                |
-|--------|-------------------------------|----------------------------------------|
-| POST   | `/automations`                | Create an automation (documented)      |
-| GET    | `/automations`                | List automations (inferred)            |
-| GET    | `/automations/{id}`           | Get (inferred)                         |
-| PATCH  | `/automations/{id}`           | Update (inferred)                      |
-| POST   | `/automations/{id}/stop`      | Stop a running automation (inferred)   |
-| DELETE | `/automations/{id}`           | Delete (inferred)                      |
+The source skill inferred several raw automation and event-schema paths. They are intentionally excluded from this Codex adaptation. Use the documented native CLI surface instead:
 
-> Only `POST /automations` and `POST /events/send` are in the public llms.txt as of May 2026. The CLI exposes the full CRUD set - the REST paths above are the canonical REST convention. If a 404 returns, fall back to `bunx resend-cli automations <cmd>`.
+```bash
+bunx --bun resend-cli@latest automations <command> ... -q
+bunx --bun resend-cli@latest events <command> ... -q
+```
 
-### Automation events / Event schemas *(MCP gap)*
-
-| Method | Path                           | Purpose                                          |
-|--------|--------------------------------|--------------------------------------------------|
-| POST   | `/events/send`                 | Trigger an automation (`{event, contact_id\|email, payload}`) |
-| POST   | `/event-schemas`               | Create event schema (inferred)                   |
-| GET    | `/event-schemas`               | List schemas (inferred)                          |
-| GET    | `/event-schemas/{id}`          | Get (inferred)                                   |
-| PATCH  | `/event-schemas/{id}`          | Update (inferred)                                |
-| DELETE | `/event-schemas/{id}`          | Delete (inferred)                                |
+Inspect current help before use. Do not translate those commands back into guessed REST routes.
 
 ### Logs *(MCP gap)*
 

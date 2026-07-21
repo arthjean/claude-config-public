@@ -47,3 +47,4 @@ case "$action" in
 
   *) err "unknown action: $action  (try: ls|get)" ;;
 esac
+

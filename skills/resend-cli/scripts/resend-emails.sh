@@ -212,3 +212,4 @@ case "$action" in
 
   *) err "unknown action: $action  (try: send|batch|ls|get|cancel|reschedule|attachments|attachment)" ;;
 esac
+
