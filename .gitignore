@@ -60,18 +60,14 @@ settings.local.json
 !/skills/_shared/
 !/skills/clerk-cli/
 !/skills/github-cli/
+!/skills/meta-code/
+!/skills/meta-debug/
 !/skills/neon-cli/
 !/skills/posthog-cli/
 !/skills/resend-cli/
-!/skills/vercel-cli/
-!/skills/review-story/
 !/skills/security-review/
+!/skills/vercel-cli/
 !/skills/write-prd/
-!/skills/ultron/
-# Dereferenced from the store to vendor them in-place (they also exist in the ~/.agents store):
-!/skills/implement-story/
-!/skills/meta-code/
-!/skills/meta-debug/
 # Custom subagent definitions are authored in-place (not symlinked); track them,
 # drop the runtime .claude/agent-memory state.
 /agents/*

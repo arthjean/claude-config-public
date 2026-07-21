@@ -60,4 +60,3 @@ Each phase becomes an independently implementable story.
 Apply scope guard checks in any pipeline that produces a change plan before execution:
 - `/meta-refact` - Step 4d (mandatory, already enforced)
 - `/implement-story` - Phase 3b (when plan exceeds thresholds)
-- `/review-story` - Phase 5a (when remediation scope is large)
