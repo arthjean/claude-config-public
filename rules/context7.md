@@ -1,16 +1,16 @@
-Use the `ctx7` CLI to fetch current documentation whenever the user asks about a library, framework, SDK, API, CLI tool, or cloud service, even well-known ones like React, Next.js, Prisma, Express, Tailwind, Django, or Spring Boot. This includes API syntax, configuration, version migration, library-specific debugging, setup instructions, and CLI tool usage. Use it even when you think you know the answer: your training data may not reflect recent changes. Prefer this over web search for library docs.
+Use the Context7 skill plus CLI for current documentation whenever the user asks about a library, framework, SDK, API, CLI tool, or cloud service. This includes API syntax, configuration, migrations, library-specific debugging, setup, and CLI usage. Prefer it over web search for library documentation.
 
 Do not use for: refactoring, writing scripts from scratch, debugging business logic, code review, or general programming concepts.
 
 ## Steps
 
-1. Resolve library: `bunx ctx7@latest library <name> "<user's question>"`. Use the official library name with proper punctuation (e.g., "Next.js" not "nextjs", "Customer.io" not "customerio", "Three.js" not "threejs").
-2. Pick the best match (ID format: `/org/project`) by: exact name match, description relevance, code snippet count, source reputation (High/Medium preferred), and benchmark score (higher is better). If results don't look right, try alternate names or queries (e.g., "next.js" not "nextjs", or rephrase the question)
-3. Fetch docs: `bunx ctx7@latest docs <libraryId> "<user's question>"`
-4. Answer using the fetched documentation
+1. Unless the user provides an exact ID in `/org/project` or `/org/project/version` form, run `bunx ctx7@latest library <library_name> "<user's full question>"`.
+2. Pick the best match by exact name, description relevance, snippet count, source reputation, benchmark score, and version fit. Retry with an alternate name only when the result is wrong.
+3. Run `bunx ctx7@latest docs <libraryId> "<user's full question>"` with a specific query.
+4. Answer from the fetched documentation and separate verified behavior from inference.
 
-You MUST call `library` first to get a valid ID unless the user provides one directly in `/org/project` format. Use the user's full question as the query -- specific and detailed queries return better results than vague single words. Do not run more than 3 commands per question. Do not include sensitive information (API keys, passwords, credentials) in queries.
+Use two retrieval calls normally and at most three. Do not include secrets, credentials, private source code, or personal data in queries. Do not use Context7 MCP tools unless the user explicitly requests MCP mode.
 
 For version-specific docs, use `/org/project/version` from the `library` output (e.g., `/vercel/next.js/v14.3.0`).
 
-If a command fails with a quota error, inform the user and suggest `bunx ctx7@latest login` or setting `CONTEXT7_API_KEY` env var for higher limits. Do not silently fall back to training data.
+Before reporting an authentication or quota problem, run `bunx ctx7@latest whoami` once. If it reports an authenticated session, do not tell the user to log in again. Report the exact CLI error and whether the apparent quota conflicts with the dashboard state. Never silently fall back to model memory.
