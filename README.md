@@ -29,7 +29,7 @@ Ne copiez jamais de secrets dans ce repo: `.env`, `.credentials.json`, tokens, c
 - `settings.json`: réglages Claude Code portables.
 - `rules/`: règles spécialisées, dont Context7 et Rust.
 - `agents/`: agents spécialisés pour docs, exploration de codebase, et recherche web.
-- `skills/`: workflows réutilisables avec références et scripts.
+- `skills/`: workflows réutilisables avec références et scripts. Ce sont des snapshots vendorés: la config privée du mainteneur les symlinke depuis un store externe, le repo public les embarque en vrais fichiers pour rester autonome.
 - `statusline.sh`: statusline optionnelle pour le TUI.
 
 ## Personnalisation
@@ -44,6 +44,14 @@ Collez ce paragraphe dans Claude Code après avoir cloné le fork:
 
 ```text
 Installe ce fork comme base de mon `~/.claude` en mode autonome et maximaliste. Comprends l'esprit de la config, garde l'agent proactif, permissif, outillé et orienté action, active ce qui augmente sa puissance (agents, skills, rules, statusline, settings) sans me demander de micro-validations, adapte seulement ce qui dépend de ma machine, de mon stack et de mon style, protège mes secrets et fichiers privés existants, puis applique l'intégration la plus directe possible et résume ce que tu as changé.
+```
+
+## Prompt de mise à jour
+
+Pour le mainteneur du repo: à chaque évolution de la config privée, collez ce prompt dans Claude Code pour resynchroniser le repo public.
+
+```text
+Mets à jour le repo public claude-config-public depuis ma config privée. Sources de vérité: ~/.claude pour settings.json, statusline.sh, rules/, agents/, CLAUDE.md et les skills propres au repo, et ~/.agents/skills pour les skills symlinkées. Vendorise les skills symlinkées en vrais fichiers, supprime du repo public les skills retirées de la config privée, et reporte les changements de settings, rules, agents et docs en conservant leur forme générique: aucune persona ni section privée de mon CLAUDE.md, aucun nom, handle, email, entreprise ou projet personnel, aucun chemin absolu type /home/<user>, aucune commande d'installation propre à ma distro, aucun pin de modèle lié à mon abonnement, et des placeholders pour toute clé ou token d'exemple. Mets à jour le README et le .gitignore si la structure change. Avant de committer, exécute la checklist de publication du README et corrige toute fuite détectée. Termine par des commits atomiques en Conventional Commits, puis push.
 ```
 
 ## Checklist avant publication
