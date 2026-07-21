@@ -1,18 +1,20 @@
 # Claude Config Starter
 
-Configuration publique et personnalisable pour Claude Code: instructions durables, agents spécialisés, skills, règles de documentation, statusline, et settings de base. Le repo sert de point de départ pour construire votre propre `~/.claude` sans repartir d'une page blanche.
+> Version française: [README.fr.md](README.fr.md)
 
-## Installation rapide
+Public, customizable configuration for Claude Code: durable instructions, specialized agents, skills, documentation rules, statusline, and base settings. This repo is a starting point for building your own `~/.claude` without starting from a blank page.
 
-Clonez le repo, sauvegardez votre configuration actuelle, puis copiez les fichiers dans votre dossier Claude:
+## Quick install
+
+Clone the repo, back up your current configuration, then copy the files into your Claude directory:
 
 ```bash
 git clone https://github.com/<your-org>/<your-fork>.git claude-config
 cp -R ~/.claude ~/.claude.backup.$(date +%Y%m%d-%H%M%S)
-rsync -av --exclude ".git" --exclude "README.md" claude-config/ ~/.claude/
+rsync -av --exclude ".git" --exclude "README.md" --exclude "README.fr.md" claude-config/ ~/.claude/
 ```
 
-Sur Windows, utilisez le dossier `%USERPROFILE%\.claude` et copiez les fichiers avec PowerShell:
+On Windows, use the `%USERPROFILE%\.claude` directory and copy the files with PowerShell:
 
 ```powershell
 git clone https://github.com/<your-org>/<your-fork>.git claude-config
@@ -20,43 +22,43 @@ Copy-Item "$env:USERPROFILE\.claude" "$env:USERPROFILE\.claude.backup" -Recurse 
 Copy-Item ".\claude-config\*" "$env:USERPROFILE\.claude" -Recurse -Force
 ```
 
-Ne copiez jamais de secrets dans ce repo: `.env`, `.credentials.json`, tokens, clés SSH, certificats privés, historiques de session, caches, logs, et `settings.local.json` doivent rester locaux.
+Never copy secrets into this repo: `.env`, `.credentials.json`, tokens, SSH keys, private certificates, session history, caches, logs, and `settings.local.json` must stay local.
 
-## Ce que contient le repo
+## What the repo contains
 
-- `CLAUDE.md`: comportement global de Claude Code, template de personnalisation, règles de collaboration, stack par défaut.
-- `AGENTS.md`: miroir générique pour environnements compatibles Codex.
-- `settings.json`: réglages Claude Code portables.
-- `rules/`: règles spécialisées, dont Context7 et Rust.
-- `agents/`: agents spécialisés pour docs, exploration de codebase, et recherche web.
-- `skills/`: workflows réutilisables avec références et scripts. Ce sont des snapshots vendorés: la config privée du mainteneur les symlinke depuis un store externe, le repo public les embarque en vrais fichiers pour rester autonome.
-- `statusline.sh`: statusline optionnelle pour le TUI.
+- `CLAUDE.md`: global Claude Code behavior, personalization template, collaboration rules, default stack.
+- `AGENTS.md`: generic mirror for Codex-compatible environments.
+- `settings.json`: portable Claude Code settings.
+- `rules/`: specialized rules, including Context7 and Rust.
+- `agents/`: specialized agents for docs, codebase exploration, and web research.
+- `skills/`: reusable workflows with references and scripts. These are vendored snapshots: the maintainer's private config symlinks them from an external store, while the public repo embeds them as real files to stay self-contained.
+- `statusline.sh`: optional statusline for the TUI.
 
-## Personnalisation
+## Customization
 
-Commencez par `CLAUDE.md`. Remplacez les defaults par votre vrai contexte: ton souhaité, stack, projets actifs, critères de décision, contraintes de sécurité, formats de réponse, règles Git, et habitudes d'orchestration. Gardez les informations personnelles minimales: ce fichier est très utile localement, mais il devient sensible si vous le publiez.
+Start with `CLAUDE.md`. Replace the defaults with your real context: desired tone, stack, active projects, decision criteria, security constraints, response formats, Git rules, and orchestration habits. Keep personal information minimal: this file is very useful locally, but it becomes sensitive if you publish it.
 
-Ensuite, inspectez `settings.json`. Les permissions sont volontairement puissantes, donc adaptez-les à votre niveau de confiance. Gardez `settings.local.json` pour les overrides machine et ne le commitez pas.
+Then inspect `settings.json`. The permissions are intentionally powerful, so adapt them to your own trust level. Keep `settings.local.json` for machine-local overrides and never commit it.
 
-## Prompt d'onboarding
+## Onboarding prompt
 
-Collez ce paragraphe dans Claude Code après avoir cloné le fork:
-
-```text
-Installe ce fork comme base de mon `~/.claude` en mode autonome et maximaliste. Comprends l'esprit de la config, garde l'agent proactif, permissif, outillé et orienté action, active ce qui augmente sa puissance (agents, skills, rules, statusline, settings) sans me demander de micro-validations, adapte seulement ce qui dépend de ma machine, de mon stack et de mon style, protège mes secrets et fichiers privés existants, puis applique l'intégration la plus directe possible et résume ce que tu as changé.
-```
-
-## Prompt de mise à jour
-
-Pour le mainteneur du repo: à chaque évolution de la config privée, collez ce prompt dans Claude Code pour resynchroniser le repo public.
+Paste this paragraph into Claude Code after cloning your fork:
 
 ```text
-Mets à jour le repo public claude-config-public depuis ma config privée. Sources de vérité: ~/.claude pour settings.json, statusline.sh, rules/, agents/, CLAUDE.md et les skills propres au repo, et ~/.agents/skills pour les skills symlinkées. Vendorise les skills symlinkées en vrais fichiers, supprime du repo public les skills retirées de la config privée, et reporte les changements de settings, rules, agents et docs en conservant leur forme générique: aucune persona ni section privée de mon CLAUDE.md, aucun nom, handle, email, entreprise ou projet personnel, aucun chemin absolu type /home/<user>, aucune commande d'installation propre à ma distro, aucun pin de modèle lié à mon abonnement, et des placeholders pour toute clé ou token d'exemple. Mets à jour le README et le .gitignore si la structure change. Avant de committer, exécute la checklist de publication du README et corrige toute fuite détectée. Termine par des commits atomiques en Conventional Commits, puis push.
+Install this fork as the base of my `~/.claude` in autonomous, maximalist mode. Understand the spirit of the config, keep the agent proactive, permissive, well-tooled and action-oriented, enable everything that increases its power (agents, skills, rules, statusline, settings) without asking me for micro-validations, adapt only what depends on my machine, my stack and my style, protect my existing secrets and private files, then apply the most direct integration possible and summarize what you changed.
 ```
 
-## Checklist avant publication
+## Update prompt
 
-Avant de rendre votre fork public:
+For the repo maintainer: whenever the private config evolves, paste this prompt into Claude Code to resync the public repo.
+
+```text
+Update the public claude-config-public repo from my private config. Sources of truth: ~/.claude for settings.json, statusline.sh, rules/, agents/, CLAUDE.md and the repo-specific skills, and ~/.agents/skills for the symlinked skills. Vendor the symlinked skills as real files, remove from the public repo any skills dropped from the private config, and port over changes to settings, rules, agents and docs while keeping their generic form: no persona or private sections from my CLAUDE.md, no name, handle, email, company or personal project, no absolute paths like /home/<user>, no distro-specific install commands, no model pin tied to my subscription, and placeholders for any example key or token. Update the README and .gitignore if the structure changes. Before committing, run the publication checklist from the README and fix any detected leak. Finish with atomic Conventional Commits, then push.
+```
+
+## Pre-publication checklist
+
+Before making your fork public:
 
 ```bash
 git status --short
@@ -65,8 +67,8 @@ rg -n -i "token|secret|password|credential|api[_-]?key|private_key|BEGIN .* PRIV
 rg -n -i "<your-name>|<your-handle>|<your-company>|<private-project>"
 ```
 
-Supprimez les états locaux du suivi Git: `teams/`, caches de plugins, sessions, debug logs, shell snapshots, telemetry, file history, prompts, downloads, et tout répertoire généré par l'outil.
+Remove local state from Git tracking: `teams/`, plugin caches, sessions, debug logs, shell snapshots, telemetry, file history, prompts, downloads, and any tool-generated directory.
 
-## Mise à jour
+## Keeping it updated
 
-Gardez votre fork public générique. Mettez vos préférences vraiment personnelles dans une branche privée, un repo privé, ou `settings.local.json`. Le bon modèle: public pour la structure, privé pour l'identité.
+Keep your public fork generic. Put your truly personal preferences in a private branch, a private repo, or `settings.local.json`. The right model: public for structure, private for identity.
