@@ -26,17 +26,21 @@ Never copy secrets into this repo: `.env`, `.credentials.json`, tokens, SSH keys
 
 ## What the repo contains
 
-- `CLAUDE.md`: global Claude Code behavior, personalization template, collaboration rules, default stack.
-- `AGENTS.md`: generic mirror for Codex-compatible environments.
+- `CLAUDE.md`: concise global Claude Code map and always-on behavior.
+- `AGENTS.md`: concise mirror for Codex-compatible environments.
+- `docs/`: progressively disclosed context, engineering, design, research, delivery, and harness guidance.
 - `settings.json`: portable Claude Code settings.
 - `rules/`: specialized rules, including Context7 and Rust.
 - `agents/`: specialized agents for docs, codebase exploration, and web research.
 - `skills/`: reusable workflows with references and scripts. These are vendored snapshots: the maintainer's private config symlinks them from an external store, while the public repo embeds them as real files to stay self-contained.
+- `scripts/check-guidance.sh`: validates map size, metadata, links, and forbidden em dash glyphs.
 - `statusline.sh`: optional statusline for the TUI.
 
 ## Customization
 
-Start with `CLAUDE.md`. Replace the defaults with your real context: desired tone, stack, active projects, decision criteria, security constraints, response formats, Git rules, and orchestration habits. Keep personal information minimal: this file is very useful locally, but it becomes sensitive if you publish it.
+Start with `docs/user-context.md` in a private fork or local installation. Add only the stable context that materially improves decisions: positioning, project hierarchy, current focus, collaboration constraints, and writing voice.
+
+Keep `CLAUDE.md` and `AGENTS.md` concise. Detailed or task-specific guidance belongs in the corresponding document, rule, or skill. Do not import every document into `CLAUDE.md`: Claude Code expands imports into startup context.
 
 Then inspect `settings.json`. The permissions are intentionally powerful, so adapt them to your own trust level. Keep `settings.local.json` for machine-local overrides and never commit it.
 
@@ -53,7 +57,7 @@ Install this fork as the base of my `~/.claude` in autonomous, maximalist mode. 
 For the repo maintainer: whenever the private config evolves, paste this prompt into Claude Code to resync the public repo.
 
 ```text
-Update the public claude-config-public repo from my private config. Sources of truth: ~/.claude for settings.json, statusline.sh, rules/, agents/, CLAUDE.md and the repo-specific skills, and ~/.agents/skills for the symlinked skills. Vendor the symlinked skills as real files, remove from the public repo any skills dropped from the private config, and port over changes to settings, rules, agents and docs while keeping their generic form: no persona or private sections from my CLAUDE.md, no name, handle, email, company or personal project, no absolute paths like /home/<user>, no distro-specific install commands, no model pin tied to my subscription, and placeholders for any example key or token. Update the README and .gitignore if the structure changes. Before committing, run the publication checklist from the README and fix any detected leak. Finish with atomic Conventional Commits, then push.
+Update the public claude-config-public repo from my private config. Sources of truth: ~/.claude for settings.json, statusline.sh, rules/, agents/, CLAUDE.md, docs/, scripts/ and the repo-specific skills, and ~/.agents/skills for the symlinked skills. Vendor the symlinked skills as real files, remove from the public repo any skills dropped from the private config, and port over changes while keeping their generic form: no persona or private context, no name, handle, email, company or personal project, no absolute user paths, no distro-specific install commands, no model pin tied to my subscription, and placeholders for example keys or tokens. Update both READMEs and .gitignore when the structure changes. Run the guidance and publication checks, fix every detected leak, then make atomic Conventional Commits and push.
 ```
 
 ## Pre-publication checklist
@@ -61,6 +65,7 @@ Update the public claude-config-public repo from my private config. Sources of t
 Before making your fork public:
 
 ```bash
+./scripts/check-guidance.sh
 git status --short
 git ls-files
 rg -n -i "token|secret|password|credential|api[_-]?key|private_key|BEGIN .* PRIVATE KEY|/home/|C:\\\\Users|\\.env"
