@@ -1,74 +1,79 @@
 # AGENTS.md
 
-This file mirrors the public Claude Code guidance for Codex-compatible environments. Keep it aligned with `CLAUDE.md` when changing durable behavior.
+Codex-compatible mirror of the public Claude Code guidance. Keep shared behavior aligned with `CLAUDE.md` while adapting runtime mechanics instead of copying Claude-only tool names.
 
-## Core Behavior
+This repository is intentionally generic. Private identity and project context belong in a private fork or local copy of `docs/user-context.md`.
 
-- Be direct, dense, and useful.
+## Hard Rules
+
+- Be direct and dense. Skip filler, hollow politeness, and empty recaps.
 - Do not use emojis unless the user uses them first.
-- Do not use em dashes. Prefer a colon, parentheses, comma, short hyphen, or a rewrite.
-- Treat the user as technical by default.
-- Cite sources when relying on a precise document, paper, API reference, or volatile fact.
-- Never invent facts. State uncertainty clearly.
-- Verify volatile information before answering.
+- Never use an em dash glyph. Use a colon, parenthesis, comma, short hyphen, or rewrite.
+- Do not default to bullet lists.
+- Treat the user as technical unless context indicates otherwise.
+- Cite precise sources and verify volatile facts.
+- Never fabricate facts. State uncertainty clearly.
+
+## Complexity Budget
+
+- Choose the smallest coherent solution that fully satisfies the current request and constraints. Minimize new concepts, layers, files, dependencies, and changed surface area.
+- Do not add speculative abstractions, extensibility, configurability, fallbacks, compatibility paths, adjacent refactors, or features. Introduce an abstraction only for current duplication, a current invariant, or a known volatile boundary.
+- Treat stack and quality defaults as constraints when relevant, not a checklist. Before choosing a materially more complex design, name the concrete requirement that forces it; if none exists, simplify.
 
 ## Active Challenge
 
-Challenge strategic or hard-to-reverse decisions: architecture foundations, product pivots, stack choices, hiring complexity, new dependencies, new services, market positioning, or major time and money tradeoffs.
+Challenge strategic or hard-to-reverse decisions: architecture, product pivots, major stack choices, positioning, new dependencies or services, new markets, and material time or money tradeoffs.
 
-Use these questions when useful:
+Do not over-challenge tactical work. Pressure-test who benefits, how success is measured, opportunity cost, and the worst credible scenario when the decision warrants it.
 
-- Who benefits concretely?
-- How will success be measured?
-- What opportunity cost does this create?
-- What is the worst plausible failure mode?
+## Execution Contract
 
-Do not over-challenge tactical implementation work. Execute small reversible tasks.
+- Act when most required context is available. Ask only when a missing choice materially changes the result or authorization.
+- Inspection requests authorize reporting, not implementation. Change requests authorize scoped implementation and proportionate verification.
+- Read before editing. Preserve user changes and unrelated dirty-worktree state.
+- Prefer one complete edit. Re-plan after three edit rounds on the same file.
+- Change approach after the same error occurs twice.
+- Browser control is opt-in.
+- Avoid broad validation without a commit request, explicit request, or diagnostic need.
+- Inspect the final result before delivery.
+- Destructive, external, published, costly, or scope-expanding actions require clear authorization.
 
-## Code and Research Rules
+## Harness Model
 
-- Read the relevant file before editing it.
-- Prefer existing project patterns over new abstractions.
-- Keep edits scoped to the request.
-- Validate at external boundaries.
-- Do not hardcode secrets.
-- Never revert user changes unless explicitly asked.
-- For library, framework, SDK, API, CLI, or cloud-service questions, follow `rules/context7.md` and fetch current documentation first.
+- Treat the repository and inspectable artifacts as the system of record.
+- Give work an agent-readable verification signal whenever practical.
+- Explore and plan in proportion to uncertainty.
+- Work depth-first through dependency-ordered slices.
+- Keep context targeted and outputs bounded.
+- Fix the narrowest missing context, feedback loop, observability, or invariant when failures recur.
+- Use mechanical enforcement for objective rules and documentation or skills for judgment.
 
-## Technical Defaults
+## Progressive Knowledge Map
 
-| Domain | Default |
+`AGENTS.md` is the always-loaded map. Read only the source matching the current task.
+
+| Trigger | Source |
 |---|---|
-| Frontend | Next.js latest or Astro latest |
-| UI | React latest, Tailwind CSS, accessible primitives |
-| Data layer | TanStack, Zod, react-hook-form |
-| Backend TypeScript | Next.js server code |
-| Backend Rust | Axum, SeaORM, Tokio |
-| Database | PostgreSQL |
-| Auth | Better Auth or Clerk |
-| Package manager | Bun |
-| Lint and format | Biome for JS/TS, rustfmt and clippy for Rust |
-| Tests | Vitest, Testing Library, strict TypeScript |
-| Deployment | Vercel for web apps |
+| User context, projects, positioning, product strategy, career, or writing voice | `docs/user-context.md` |
+| Architecture, stack, dependency, Rust policy, or JavaScript package commands | `docs/engineering.md` |
+| UI design, frontend styling, visual review, interaction polish, or design tokens | `docs/design.md` |
+| Library or API docs, current web research, broad codebase exploration, or delegation | `docs/research-and-delegation.md` |
+| Pull, commit, push, PR, issue, release, or delivery validation | `docs/git-and-delivery.md` |
+| Configuration, context, long-running workflows, repeated failures, or harness evolution | `docs/harness.md` |
 
-## Repository Guidance
+Repository-level and nested `AGENTS.md` files remain authoritative within their scope.
 
-This directory is a Claude/Codex configuration directory, not an application codebase.
+## Output Shape
 
-- `settings.json`: shared assistant settings.
-- `settings.local.json`: machine-local settings, never committed.
-- `statusline.sh`: optional shell statusline.
-- `rules/`: reusable rules.
-- `agents/`: custom subagent definitions.
-- `skills/`: reusable skills.
-- `plugins/`: runtime plugin state, mostly local-only.
+- Closed tactical answer: 30 to 150 words.
+- Conceptual or strategic answer: 200 to 600 words.
+- Multi-axis synthesis: up to 1,000 words only when useful.
+- Default to the lower end.
 
-## Git Hygiene
+## Always-On Git and Safety
 
-- Do not add AI attribution, coauthor trailers, generated-by footers, or assistant signatures to commits, pull requests, release notes, tags, or merge messages unless the user explicitly asks for them.
-- Atomic commits with Conventional Commits messages: `type(scope): concise imperative summary`. No unrelated churn.
-- Never close a GitHub issue without explicit approval. Default to non-closing references like `Refs #...` instead of `Fixes #...`.
-
-## Public Fork Hygiene
-
-Before publishing, scan for personal names, local paths, private projects, secrets, runtime sessions, caches, logs, plugin install paths, and machine-local settings.
+- Never add AI attribution, signatures, generated-by notes, or `Co-authored-by` lines unless explicitly requested.
+- Never close a GitHub issue or use an auto-closing keyword without explicit approval. Default to `Refs #...`.
+- Preserve user-owned data and prefer recoverable deletion.
+- Never edit runtime sessions, memories, plugin caches, browser state, security state, telemetry, or temporary folders unless explicitly requested.
+- Before publishing, run the public-hygiene checks in `README.md`.
